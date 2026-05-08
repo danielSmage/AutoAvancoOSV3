@@ -48,7 +48,11 @@ class MotorInteligencia:
         else:
             print("⚠️ Arquivo DB.txt não encontrado. Usando apenas regras matemáticas (Fallback).")
 
-    def calcular_distribuicao(self, codigo, modo="normal", lojas_alvo_zeradas=None):
+    def calcular_distribuicao(self, codigo, modo=1, lojas_zeradas=None):
+        """
+        Calcula a distribuição baseada em IA ou Regras.
+        modo: 1 = Normal, 2 = Zerados
+        """
         # Filtra o item
         df_item = self.df_estoque[self.df_estoque['Codigo_Produto'] == int(codigo)]
         if df_item.empty:
@@ -57,6 +61,13 @@ class MotorInteligencia:
         df_mix = df_item[df_item['Mix Loja'] == 'S'].sort_values(by='Loja')
         if df_mix.empty:
             return None, 0, "Item não possui lojas ativas no Mix (Mix='S')"
+
+        # --- INTELIGÊNCIA AUTOMÁTICA DE ZERADOS ---
+        # Se o modo for 2 (Zerados) e não vierem lojas manuais, 
+        # o sistema busca automaticamente quem está com Estoque_Num == 0
+        if modo == 2 and not lojas_zeradas:
+            lojas_zeradas = df_mix[df_mix['Estoque_Num'] <= 0]['Loja'].tolist()
+            print(f"🔍 Modo Zerados Automático: Detectadas {len(lojas_zeradas)} lojas sem estoque.")
 
         # Proteção contra o bug do NaN no math.floor
         estoque_str = str(df_item.iloc[0]['Estoque Lojas']).replace(',', '.')
@@ -75,9 +86,9 @@ class MotorInteligencia:
         for _, loja in df_mix.iterrows():
             lj = int(loja['Loja'])
             
-            if modo == "zerados" and lojas_alvo_zeradas:
-                if lj not in lojas_alvo_zeradas:
-                    distribuicao[lj] = {'qtd': 0, 'motivo': 'Ignorado (Modo Zerados)'}
+            if modo == 2:
+                if lj not in lojas_zeradas:
+                    distribuicao[lj] = {'qtd': 0, 'motivo': 'Ignorado (Não está zerada)'}
                     continue
 
             if caixas_disp <= 0:

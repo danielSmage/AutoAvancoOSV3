@@ -1,167 +1,165 @@
 # modulos/interface.py
-import tkinter as tk
+import customtkinter as ctk
 from tkinter import messagebox
 import threading
 import time
 import sys
 import os
 
-# Importa os outros módulos limpos
+# Importa os outros módulos
 from modulos.seguranca import AutenticadorFirebase
 from modulos.ai_core import MotorInteligencia
 from modulos.rpa_bot import RoboOperador
 
-# ==========================================
-# 1. O MOTOR DO ROBÔ (A Lógica RPA)
-# ==========================================
-def iniciar_automacao_real(codigos_texto, modo, lojas_zeradas_str, motor, robo, botao_iniciar):
-    botao_iniciar.config(state=tk.DISABLED)
-    
-    try:
-        codigos = [int(x.strip()) for x in codigos_texto.split() if x.strip().isdigit()]
-        lojas_zeradas = [int(x.strip()) for x in lojas_zeradas_str.split() if x.strip().isdigit()]
+# Configurações globais de aparência
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+
+class AppReposicao(ctk.CTk):
+    def __init__(self, operador_logado):
+        super().__init__()
+
+        self.operador_logado = operador_logado
+        self.title(f"AVANÇO PRO SYSTEM V2 - {operador_logado.upper()}")
+        self.geometry("500x700")
         
-        if not codigos:
-            messagebox.showwarning("Aviso", "Por favor, insira códigos válidos (números).")
-            return
-            
-        if modo == 2 and not lojas_zeradas:
-            messagebox.showwarning("Aviso", "No MODO ZERADOS, você precisa informar o número das lojas.")
+        # Inicializa o motor e o robô
+        self.preparar_motores()
+
+        # Layout Principal
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(4, weight=1)
+
+        # 1. Cabeçalho
+        self.lbl_titulo = ctk.CTkLabel(self, text="AVANÇO PRO", font=ctk.CTkFont(size=24, weight="bold"))
+        self.lbl_titulo.grid(row=0, column=0, padx=20, pady=(20, 5))
+
+        self.lbl_subtitulo = ctk.CTkLabel(self, text=f"Sessão Ativa: {operador_logado.title()}", text_color="gray")
+        self.lbl_subtitulo.grid(row=1, column=0, padx=20, pady=(0, 20))
+
+        # 2. Configurações de Modo (Card)
+        self.frame_modo = ctk.CTkFrame(self)
+        self.frame_modo.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+        self.frame_modo.grid_columnconfigure(0, weight=1)
+
+        self.lbl_config = ctk.CTkLabel(self.frame_modo, text="MODO DE OPERAÇÃO", font=ctk.CTkFont(size=12, weight="bold"))
+        self.lbl_config.grid(row=0, column=0, padx=15, pady=(10, 5), sticky="w")
+
+        self.modo_var = ctk.IntVar(value=1)
+        
+        self.rb_normal = ctk.CTkRadioButton(self.frame_modo, text="Distribuição Padrão (IA)", variable=self.modo_var, value=1)
+        self.rb_normal.grid(row=1, column=0, padx=15, pady=5, sticky="w")
+
+        self.rb_zerados = ctk.CTkRadioButton(self.frame_modo, text="Focar Lojas Zeradas (Urgência)", variable=self.modo_var, value=2)
+        self.rb_zerados.grid(row=2, column=0, padx=15, pady=(5, 15), sticky="w")
+
+        # 3. Entrada de Códigos
+        self.lbl_codigos = ctk.CTkLabel(self, text="CÓDIGOS DOS PRODUTOS", font=ctk.CTkFont(size=12, weight="bold"))
+        self.lbl_codigos.grid(row=3, column=0, padx=20, pady=(15, 5), sticky="w")
+
+        self.txt_codigos = ctk.CTkTextbox(self, font=("Consolas", 12))
+        self.txt_codigos.grid(row=4, column=0, padx=20, pady=5, sticky="nsew")
+
+        # 4. Botão de Início
+        self.btn_iniciar = ctk.CTkButton(self, text="EXECUTAR RPA", height=50, font=ctk.CTkFont(size=16, weight="bold"),
+                                        fg_color="#1f538d", hover_color="#14375e", command=self.ao_clicar_iniciar)
+        self.btn_iniciar.grid(row=5, column=0, padx=20, pady=20, sticky="ew")
+
+        # 5. Barra de Status
+        self.lbl_status = ctk.CTkLabel(self, text="Pronto para iniciar.", text_color="gray", font=ctk.CTkFont(size=11))
+        self.lbl_status.grid(row=6, column=0, padx=20, pady=(0, 10))
+
+    def preparar_motores(self):
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path_db = os.path.join(base_dir, 'dados', 'DB.txt')
+        path_estoque = os.path.join(base_dir, 'dados', 'estoque99.csv')
+
+        try:
+            self.motor = MotorInteligencia(path_db, path_estoque)
+            self.robo = RoboOperador(self.operador_logado)
+        except Exception as e:
+            messagebox.showerror("Erro Fatal", f"Erro ao inicializar sistemas:\n{str(e)}")
+            sys.exit()
+
+    def ao_clicar_iniciar(self):
+        texto = self.txt_codigos.get("1.0", "end-1c").strip()
+        if not texto:
+            messagebox.showwarning("Aviso", "Insira pelo menos um código.")
             return
 
-        messagebox.showinfo("Atenção!", "O robô vai iniciar em 5 segundos.\n\nCLIQUE NA TELA DO AVANÇO E TIRE A MÃO DO MOUSE/TECLADO!")
-        time.sleep(5)
+        self.btn_iniciar.configure(state="disabled", text="EM EXECUÇÃO...")
+        self.lbl_status.configure(text="Aguardando 5 segundos para início...", text_color="#ffcc00")
         
-        for cod in codigos:
-            # A IA agora pode receber o modo e as lojas zeradas para calcular diferente!
-            # (Certifique-se de que o seu ai_core.py e rpa_bot.py saibam receber esses dados)
-            distribuicao, cd_total, status = motor.calcular_distribuicao(cod, modo=modo, lojas_zeradas=lojas_zeradas)
+        threading.Thread(target=self.processar_automacao, args=(texto,), daemon=True).start()
+
+    def processar_automacao(self, codigos_texto):
+        try:
+            codigos = [int(x.strip()) for x in codigos_texto.split() if x.strip().isdigit()]
+            modo = self.modo_var.get()
             
-            if distribuicao is None:
-                print(f"Pulando Item {cod}: {status}")
-                continue
+            time.sleep(5)
+            
+            for i, cod in enumerate(codigos):
+                self.lbl_status.configure(text=f"Processando Item {i+1}/{len(codigos)}: {cod}")
                 
-            robo.executar_item(cod, distribuicao, cd_total, status)
+                # Chamada corrigida (consistentemente com ai_core.py)
+                distribuicao, cd_total, status = self.motor.calcular_distribuicao(cod, modo=modo)
+                
+                if distribuicao:
+                    self.robo.executar_item(cod, distribuicao, cd_total, status)
+                else:
+                    print(f"Item {cod} ignorado: {status}")
 
-        robo.gerar_relatorio_csv()
-        messagebox.showinfo("Sucesso", "Processamento finalizado!\nRelatório salvo na pasta 'relatorios'.")
-    
-    except Exception as e:
-        messagebox.showerror("Erro", f"Ocorreu um erro inesperado:\n{str(e)}")
-    finally:
-        botao_iniciar.config(state=tk.NORMAL)
-
-# ==========================================
-# 2. TELA PRINCIPAL (Com MODO ZERADOS)
-# ==========================================
-def abrir_tela_principal(operador_logado):
-    # Garante que os caminhos dos dados sejam absolutos em relação à raiz do projeto
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    path_db = os.path.join(base_dir, 'dados', 'DB.txt')
-    path_estoque = os.path.join(base_dir, 'dados', 'estoque99.csv')
-
-    try:
-        motor = MotorInteligencia(path_db, path_estoque)
-    except Exception as e:
-        messagebox.showerror("Erro Fatal", f"Erro ao carregar IA ou planilhas:\n{str(e)}")
-        sys.exit()
+            self.robo.gerar_relatorio_csv()
+            self.lbl_status.configure(text="Processamento Finalizado!", text_color="#44ff44")
+            messagebox.showinfo("Sucesso", "RPA finalizado com sucesso!")
         
-    robo = RoboOperador(operador_logado)
+        except Exception as e:
+            messagebox.showerror("Erro Crítico", f"Falha na automação:\n{str(e)}")
+        finally:
+            self.btn_iniciar.configure(state="normal", text="EXECUTAR RPA")
 
-    janela_app = tk.Tk()
-    janela_app.title(f"Avanço Pro System - Operador: {operador_logado.upper()}")
-    janela_app.geometry("480x650") # Aumentei um pouco a tela para caber as opções
-    janela_app.configure(padx=20, pady=20)
+def abrir_tela_principal(operador):
+    app = AppReposicao(operador)
+    app.mainloop()
 
-    tk.Label(janela_app, text="📦 SISTEMA DE REPOSIÇÃO", font=("Arial", 16, "bold")).pack(pady=(0, 5))
-    tk.Label(janela_app, text=f"Bem-vindo(a), {operador_logado.title()}", fg="gray").pack(pady=(0, 15))
-
-    # --- CONFIGURAÇÕES DE MODO ---
-    frame_modo = tk.LabelFrame(janela_app, text=" Configurações de Operação ", padx=10, pady=10)
-    frame_modo.pack(fill=tk.X, pady=5)
-
-    modo_var = tk.IntVar(value=1) # 1 = Padrão, 2 = Zerados
-
-    tk.Radiobutton(frame_modo, text="1. Modo Padrão (Distribuição Normal)", variable=modo_var, value=1).pack(anchor="w")
-    tk.Radiobutton(frame_modo, text="2. Modo Zerados (Focar na Urgência)", variable=modo_var, value=2).pack(anchor="w")
-
-    tk.Label(frame_modo, text="Lojas Zeradas (Ex: 1 5 12):", font=("Arial", 9)).pack(anchor="w", pady=(5,0))
-    entry_lojas = tk.Entry(frame_modo, font=("Arial", 10))
-    entry_lojas.pack(fill=tk.X)
-
-    # --- ENTRADA DE CÓDIGOS ---
-    tk.Label(janela_app, text="Códigos dos produtos (Um por linha):", font=("Arial", 10, "bold")).pack(anchor="w", pady=(15, 0))
-    texto_codigos = tk.Text(janela_app, height=10, width=45, font=("Arial", 10))
-    texto_codigos.pack(pady=5)
-
-    def ao_clicar_iniciar():
-        texto = texto_codigos.get("1.0", tk.END).strip()
-        modo_selecionado = modo_var.get()
-        lojas_zeradas_str = entry_lojas.get().strip()
-        
-        threading.Thread(target=iniciar_automacao_real, args=(texto, modo_selecionado, lojas_zeradas_str, motor, robo, botao_iniciar), daemon=True).start()
-
-    botao_iniciar = tk.Button(janela_app, text="⚡ INICIAR RPA", bg="green", fg="white", font=("Arial", 12, "bold"), command=ao_clicar_iniciar)
-    botao_iniciar.pack(fill=tk.X, pady=15)
-
-    janela_app.mainloop()
-
-# ==========================================
-# 3. TELA DE LOGIN (Acesso Firebase)
-# ==========================================
 def abrir_tela_login():
     auth = AutenticadorFirebase()
     
-    # Bypass da verificação remota (Evita o erro 403 de manutenção)
-    # if not auth.verificar_status_sistema():
-    #     root = tk.Tk()
-    #     root.withdraw() 
-    #     messagebox.showerror("Acesso Negado", "O sistema está em manutenção ou foi desativado remotamente.")
-    #     sys.exit()
+    # Design da tela de login
+    login = ctk.CTk()
+    login.title("Avanço Pro - Login")
+    login.geometry("350x450")
+    login.eval('tk::PlaceWindow . center')
 
-    janela_login = tk.Tk()
-    janela_login.title("Avanço Pro - Login")
-    janela_login.geometry("300x350")
-    janela_login.configure(padx=30, pady=30)
-    janela_login.eval('tk::PlaceWindow . center')
+    ctk.CTkLabel(login, text="ACESSO RESTRITO", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=(40, 30))
 
-    tk.Label(janela_login, text="🔒 ACESSO", font=("Arial", 16, "bold")).pack(pady=(0, 20))
+    entry_email = ctk.CTkEntry(login, placeholder_text="Seu E-mail", width=250, height=40)
+    entry_email.pack(pady=10)
 
-    tk.Label(janela_login, text="E-mail:", font=("Arial", 10)).pack(anchor="w")
-    entry_usuario = tk.Entry(janela_login, font=("Arial", 12))
-    entry_usuario.pack(fill=tk.X, pady=(0, 15))
+    entry_senha = ctk.CTkEntry(login, placeholder_text="Sua Senha", width=250, height=40, show="*")
+    entry_senha.pack(pady=10)
 
-    tk.Label(janela_login, text="Senha:", font=("Arial", 10)).pack(anchor="w")
-    entry_senha = tk.Entry(janela_login, font=("Arial", 12), show="*")
-    entry_senha.pack(fill=tk.X, pady=(0, 20))
-
-    def validar_e_entrar(event=None): 
-        email = entry_usuario.get().strip()
+    def executar_login():
+        email = entry_email.get().strip()
         senha = entry_senha.get()
-
-        botao_login.config(text="Autenticando...", state=tk.DISABLED)
-        janela_login.update()
-
-        sucesso_login, msg_login = auth.login_usuario(email, senha)
         
-        if sucesso_login:
-            sucesso_permissao, info_permissao = auth.verificar_usuario_ativo()
-            
-            if sucesso_permissao:
-                janela_login.destroy()
-                nome_operador = email.split('@')[0] 
-                abrir_tela_principal(nome_operador)
+        btn_login.configure(state="disabled", text="Verificando...")
+        
+        sucesso, msg = auth.login_usuario(email, senha)
+        if sucesso:
+            sucesso_per, info_per = auth.verificar_usuario_ativo()
+            if sucesso_per:
+                login.destroy()
+                abrir_tela_principal(email.split('@')[0])
             else:
-                messagebox.showerror("Acesso Bloqueado", info_permissao)
-                botao_login.config(text="ENTRAR", state=tk.NORMAL)
+                messagebox.showerror("Acesso", info_per)
+                btn_login.configure(state="normal", text="ENTRAR")
         else:
-            messagebox.showerror("Erro de Login", msg_login)
-            entry_senha.delete(0, tk.END) 
-            botao_login.config(text="ENTRAR", state=tk.NORMAL)
+            messagebox.showerror("Erro", msg)
+            btn_login.configure(state="normal", text="ENTRAR")
 
-    janela_login.bind('<Return>', validar_e_entrar)
+    btn_login = ctk.CTkButton(login, text="ENTRAR", width=250, height=45, font=ctk.CTkFont(weight="bold"), command=executar_login)
+    btn_login.pack(pady=30)
 
-    botao_login = tk.Button(janela_login, text="ENTRAR", bg="#0052cc", fg="white", font=("Arial", 12, "bold"), command=validar_e_entrar)
-    botao_login.pack(fill=tk.X, pady=10)
-
-    janela_login.mainloop()
+    login.mainloop()
