@@ -54,8 +54,13 @@ def iniciar_automacao_real(codigos_texto, modo, lojas_zeradas_str, motor, robo, 
 # 2. TELA PRINCIPAL (Com MODO ZERADOS)
 # ==========================================
 def abrir_tela_principal(operador_logado):
+    # Garante que os caminhos dos dados sejam absolutos em relação à raiz do projeto
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path_db = os.path.join(base_dir, 'dados', 'DB.txt')
+    path_estoque = os.path.join(base_dir, 'dados', 'estoque99.csv')
+
     try:
-        motor = MotorInteligencia('dados/DB.txt', 'dados/estoque99.csv')
+        motor = MotorInteligencia(path_db, path_estoque)
     except Exception as e:
         messagebox.showerror("Erro Fatal", f"Erro ao carregar IA ou planilhas:\n{str(e)}")
         sys.exit()
