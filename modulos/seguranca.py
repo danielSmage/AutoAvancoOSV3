@@ -29,8 +29,12 @@ class AutenticadorFirebase:
             if resposta.status_code == 200:
                 dados = resposta.json()
                 return dados['fields']['status_ativo']['booleanValue']
+            
+            print(f"⚠️ Erro no Firebase: Status {resposta.status_code}")
             return False
-        except requests.exceptions.RequestException:
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Erro de Conexão: {e}")
+            # Se falhar a conexão, avisamos que pode ser o Proxy/Internet
             return False
 
     def login_usuario(self, email, senha):
