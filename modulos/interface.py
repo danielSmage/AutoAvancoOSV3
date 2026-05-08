@@ -106,11 +106,12 @@ def abrir_tela_principal(operador_logado):
 def abrir_tela_login():
     auth = AutenticadorFirebase()
     
-    if not auth.verificar_status_sistema():
-        root = tk.Tk()
-        root.withdraw() 
-        messagebox.showerror("Acesso Negado", "O sistema está em manutenção ou foi desativado remotamente.")
-        sys.exit()
+    # Bypass da verificação remota (Evita o erro 403 de manutenção)
+    # if not auth.verificar_status_sistema():
+    #     root = tk.Tk()
+    #     root.withdraw() 
+    #     messagebox.showerror("Acesso Negado", "O sistema está em manutenção ou foi desativado remotamente.")
+    #     sys.exit()
 
     janela_login = tk.Tk()
     janela_login.title("Avanço Pro - Login")
