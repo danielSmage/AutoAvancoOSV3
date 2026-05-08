@@ -2,8 +2,10 @@ import requests
 import os
 from dotenv import load_dotenv
 
-# Carrega as variáveis do arquivo .env
-load_dotenv()
+# Carrega as variáveis do arquivo .env (Caminho absoluto para evitar erros)
+base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+env_path = os.path.join(base_path, '.env')
+load_dotenv(env_path)
 
 class AutenticadorFirebase:
     def __init__(self):
