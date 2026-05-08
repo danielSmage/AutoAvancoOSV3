@@ -1,6 +1,7 @@
 import pyautogui
 import time
 import pandas as pd
+import os
 from datetime import datetime
 
 pyautogui.FAILSAFE = True
@@ -62,7 +63,13 @@ class RoboOperador:
     def gerar_relatorio_csv(self):
         if not self.relatorio:
             return
+            
+        # Garante que a pasta relatorios existe para não dar erro de salvamento
+        os.makedirs("relatorios", exist_ok=True)
+            
         df_rel = pd.DataFrame(self.relatorio)
         nome_arquivo = f"relatorios/Envios_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        df_rel.to_csv(nome_arquivo, index=False, sep=';')
+        
+        # Usa utf-8-sig para compatibilidade com acentos no Excel
+        df_rel.to_csv(nome_arquivo, index=False, sep=';', encoding='utf-8-sig')
         print(f"\n📊 Relatório gerado com sucesso: {nome_arquivo}")

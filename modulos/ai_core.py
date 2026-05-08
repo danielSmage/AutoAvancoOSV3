@@ -8,21 +8,22 @@ class MotorInteligencia:
         print("🧠 Inicializando Motor de IA...")
         self.lojas_maiores = [1, 3, 4, 5, 6, 7, 8, 9, 11, 14, 15, 16, 17, 20, 22]
         
-        # 1. LENDO O ESTOQUE99 (Blindado contra bugs de caracteres)
+        # 1. LENDO O ESTOQUE99
         print("📂 Lendo o estoque atual...")
         try:
             self.df_estoque = pd.read_csv(caminho_estoque99, sep=';', encoding='latin1', low_memory=False)
         except Exception:
-            # Se latin1 falhar, tenta utf-8
             self.df_estoque = pd.read_csv(caminho_estoque99, sep=';', encoding='utf-8', low_memory=False)
             
-        # Padroniza o nome da coluna de código para evitar o bug do "CÃ³digo"
+        # Padroniza o nome da coluna de código
         colunas_codigo = [col for col in self.df_estoque.columns if 'digo' in col]
         if colunas_codigo:
             self.df_estoque.rename(columns={colunas_codigo[0]: 'Codigo_Produto'}, inplace=True)
             
         self.df_estoque['Media_Num'] = pd.to_numeric(self.df_estoque['Media'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-        self.df_estoque['Estoque_Num'] = pd.to_numeric(self.df_estoque['Estoque'].astype(str).str.replace(',', '.'), errors='coerce').fill        # 2. TREINANDO O CLONE COMPORTAMENTAL E CALCULANDO MÉDIA HISTÓRICA
+        self.df_estoque['Estoque_Num'] = pd.to_numeric(self.df_estoque['Estoque'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+
+        # 2. TREINANDO O CLONE COMPORTAMENTAL E CALCULANDO MÉDIA HISTÓRICA
         self.modelo_ia = None
         self.media_historica_item = {} # Dicionário {codigo: media_mdv}
         
@@ -58,7 +59,6 @@ class MotorInteligencia:
         Calcula a distribuição em DUAS ONDAS:
         1. Prioridade absoluta para lojas zeradas (exceto 28/29).
         2. Distribuição normal do restante baseada em IA e Giro.
-        Sazonalidade: Se o giro atual for 3x maior que o histórico, usa o histórico.
         """
         codigo_int = int(codigo)
         df_item_completo = self.df_estoque[self.df_estoque['Codigo_Produto'] == codigo_int].sort_values(by='Loja')
@@ -79,7 +79,7 @@ class MotorInteligencia:
         distribuicao = {}
         caixas_disp = estoque_cd_cx
         
-        # --- FILTRO DE SAZONALIDADE (Histórico vs Atual) ---
+        # --- FILTRO DE SAZONALIDADE ---
         media_hist = self.media_historica_item.get(codigo_int, 0)
 
         # Prepara os dados de todas as lojas
@@ -88,7 +88,7 @@ class MotorInteligencia:
             lj = int(loja['Loja'])
             mdv_final = loja['Media_Num']
             
-            # Se o MDV atual for ridiculamente desproporcional (>3x o histórico)
+            # Se o MDV atual for desproporcional (>3x o histórico), usa o histórico
             if media_hist > 0 and mdv_final > (media_hist * 3):
                 print(f"⚠️ Sazonalidade Detectada (Item {codigo_int}, Loja {lj}): {mdv_final} -> Usando Histórico {media_hist}")
                 mdv_final = media_hist
@@ -110,9 +110,9 @@ class MotorInteligencia:
             if not info['tem_mix'] or caixas_disp <= 0:
                 continue
             
-            # Se está zerada e NÃO é 28/29 -> Garante 1 caixa imediatamente
+            # Prioriza lojas zeradas (Exceto 28/29)
             if info['estoque'] <= 0 and lj not in [28, 29]:
-                distribuicao[lj] = {'qtd': 1, 'motivo': 'Prioridade: Ruptura Zero'}
+                distribuicao[lj] = {'qtd': 1, 'motivo': 'Prioridade: Anti-Zera'}
                 caixas_disp -= 1
 
         # ==========================================
@@ -147,12 +147,15 @@ class MotorInteligencia:
                     if info['perfil'] == 1: # Loja Maior
                         if (distribuicao[lj]['qtd'] + sugestao_extra) >= (45 * 0.90):
                             sugestao_extra = 45 - distribuicao[lj]['qtd']
+                            motivo_base += " + Pallet"
                         elif (distribuicao[lj]['qtd'] + sugestao_extra) > 9:
                             total = round((distribuicao[lj]['qtd'] + sugestao_extra) / 9) * 9
                             sugestao_extra = total - distribuicao[lj]['qtd']
+                            motivo_base += " + Lastro"
                     else: # Loja Menor
                         if (distribuicao[lj]['qtd'] + sugestao_extra) > 22:
                             sugestao_extra = 22 - distribuicao[lj]['qtd']
+                            motivo_base += " + Limite Meio Pallet"
 
                     if sugestao_extra > caixas_disp:
                         sugestao_extra = caixas_disp
@@ -168,8 +171,5 @@ class MotorInteligencia:
                     distribuicao[lj]['motivo'] = "Sem Mix"
                 else:
                     distribuicao[lj]['motivo'] = "Estoque OK ou CD Esgotado"
-
-        return distribuicao, estoque_cd_cx, "Sucesso"
-= sugestao
 
         return distribuicao, estoque_cd_cx, "Sucesso"
