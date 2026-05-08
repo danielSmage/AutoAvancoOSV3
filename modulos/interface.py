@@ -4,6 +4,7 @@ from tkinter import messagebox
 import threading
 import time
 import sys
+import os
 
 # Importa os outros módulos limpos
 from modulos.seguranca import AutenticadorFirebase
