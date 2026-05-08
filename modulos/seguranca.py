@@ -1,10 +1,15 @@
 import requests
+import os
+from dotenv import load_dotenv
+
+# Carrega as variáveis do arquivo .env
+load_dotenv()
 
 class AutenticadorFirebase:
     def __init__(self):
-        # 🚨 COLE AS CHAVES QUE VOCÊ PEGOU LÁ NO FIREBASE AQUI:
-        self.API_KEY = "XXXX"
-        self.PROJECT_ID = "XXXXX"
+        # As chaves agora são carregadas do ambiente para maior segurança
+        self.API_KEY = os.getenv("FIREBASE_API_KEY")
+        self.PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
         
         self.token_atual = None
         self.uid_atual = None

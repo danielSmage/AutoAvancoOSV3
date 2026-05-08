@@ -1,0 +1,5 @@
+requests
+pyautogui
+pandas
+scikit-learn
+python-dotenv
