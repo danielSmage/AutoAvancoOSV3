@@ -20,15 +20,15 @@ class RoboOperador:
             time.sleep(0.5)
 
         pyautogui.write(str(codigo))
-        pyautogui.press('enter')
-        time.sleep(1.5)
+        # Removido o ENTER extra: o sistema já cai na Loja 1 sozinho.
+        time.sleep(2.0) # Espera um pouco mais para o sistema carregar o item
 
         if status_ia == "Estoque CD Zerado/Negativo" or cd_total <= 0:
             print("⚠️ Sem estoque no CD. Apertando ESC e N...")
             pyautogui.press('esc')
-            time.sleep(0.5)
+            time.sleep(1.0)
             pyautogui.press('n')
-            time.sleep(1)
+            time.sleep(1.5)
             
             self.relatorio.append({
                 'DataHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -43,7 +43,7 @@ class RoboOperador:
                 pyautogui.write(str(qtd))
             
             pyautogui.press(['enter', 'enter'])
-            time.sleep(0.1)
+            time.sleep(0.4) # Cadência mais lenta entre lojas (era 0.1)
             
             self.relatorio.append({
                 'DataHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
