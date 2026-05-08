@@ -9,13 +9,15 @@ class RoboOperador:
     def __init__(self, operador_nome):
         self.relatorio = []
         self.operador = operador_nome
+        self.contador_sessao = 0 # Controla quantos itens foram feitos nesta rodada
 
     def executar_item(self, codigo, distribuicao, cd_total, status_ia):
         print(f"\n🤖 Operando Item {codigo}...")
         
-        # Navegação: Duas setinhas para cima para resetar a posição no sistema
-        pyautogui.press(['up', 'up'])
-        time.sleep(0.5)
+        # Só dá as setinhas se NÃO for o primeiro item da lista
+        if self.contador_sessao > 0:
+            pyautogui.press(['up', 'up'])
+            time.sleep(0.5)
 
         pyautogui.write(str(codigo))
         pyautogui.press('enter')
@@ -54,6 +56,7 @@ class RoboOperador:
         time.sleep(0.5)
         pyautogui.write('s')
         print(f"✅ Item {codigo} salvo!")
+        self.contador_sessao += 1 
         time.sleep(5) # Aguarda o processamento do sistema antes do próximo item
 
     def gerar_relatorio_csv(self):
