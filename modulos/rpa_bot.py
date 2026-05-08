@@ -50,7 +50,7 @@ class RoboOperador:
         time.sleep(0.5)
         pyautogui.write('s')
         print(f"✅ Item {codigo} salvo!")
-        time.sleep(2)
+        time.sleep(5) # Aguarda o processamento do sistema antes do próximo item
 
     def gerar_relatorio_csv(self):
         if not self.relatorio:
