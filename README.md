@@ -36,6 +36,7 @@
 3.  **Configure os dados**:
     -   Coloque o arquivo de estoque em `dados/estoque99.csv`.
     -   Coloque o histórico de reposição em `dados/DB.txt`.
+    -   (Opcional) Se estiver em uma rede corporativa, configure o Proxy no arquivo `.env`.
 
 4.  **Inicie a aplicação**:
     ```bash
