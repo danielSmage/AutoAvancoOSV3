@@ -121,14 +121,19 @@ class MotorInteligencia:
             # Trava de Segurança Final (Regras Inquebráveis)
             if sugestao > 0:
                 if perfil_loja == 1: # Loja Maior
-                    # Conservador: Aumentei o rigor para fechar pallet (era 0.75)
-                    if sugestao >= (45 * 0.85):
+                    # Regra do Pallet (10% de margem para completar)
+                    if sugestao >= (45 * 0.90):
                         sugestao = 45
-                        motivo += " -> Ajustado p/ Pallet Fechado"
+                        motivo += " -> Ajustado p/ Pallet Fechado (Margem 10%)"
                     elif sugestao > 9:
-                        # Conservador: Arredonda para BAIXO no lastro para evitar excesso
-                        sugestao = math.floor(sugestao / 9) * 9
-                        motivo += " -> Ajustado p/ Lastro (Conservador)"
+                        # Regra do Lastro (Se faltar 3% ou menos para o próximo múltiplo de 9, arredonda p/ cima)
+                        proximo_lastro = math.ceil(sugestao / 9) * 9
+                        if (proximo_lastro - sugestao) <= (9 * 0.03):
+                            sugestao = proximo_lastro
+                            motivo += " -> Arredondado p/ Cima (Margem 3%)"
+                        else:
+                            sugestao = round(sugestao / 9) * 9 # Arredondamento normal
+                            motivo += " -> Ajustado p/ Lastro"
                 else: # Loja Menor
                     if sugestao > 22:
                         sugestao = 22

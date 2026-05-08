@@ -13,6 +13,10 @@ class RoboOperador:
     def executar_item(self, codigo, distribuicao, cd_total, status_ia):
         print(f"\n🤖 Operando Item {codigo}...")
         
+        # Navegação: Duas setinhas para cima para resetar a posição no sistema
+        pyautogui.press(['up', 'up'])
+        time.sleep(0.5)
+
         pyautogui.write(str(codigo))
         pyautogui.press('enter')
         time.sleep(1.5)
