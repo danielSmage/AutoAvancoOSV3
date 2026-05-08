@@ -39,6 +39,3 @@ relatorios/*.csv
 # OS
 .DS_Store
 Thumbs.db
-
-# Environment Variables
-.env
