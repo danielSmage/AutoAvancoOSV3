@@ -1,0 +1,7 @@
+ntrar
+    abrir_tela_principal(nome_operador)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "c:\Users\LOG-SL\Desktop\XXX\AutoAvancoOSV3\modulos\interface.py", line 58, in abrir_tela_principal
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+               ^^
+NameError: name 'os' is not defined. Did you forget to import 'os'?
