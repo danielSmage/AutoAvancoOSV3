@@ -53,42 +53,44 @@ class MotorInteligencia:
         Calcula a distribuição baseada em IA ou Regras.
         modo: 1 = Normal, 2 = Zerados
         """
-        # Filtra o item
-        df_item = self.df_estoque[self.df_estoque['Codigo_Produto'] == int(codigo)]
-        if df_item.empty:
+        # Filtra todas as lojas para este item (Independente de Mix para garantir alinhamento)
+        df_item_completo = self.df_estoque[self.df_estoque['Codigo_Produto'] == int(codigo)].sort_values(by='Loja')
+        
+        if df_item_completo.empty:
             return None, 0, "Item não encontrado no estoque99"
 
-        df_mix = df_item[df_item['Mix Loja'] == 'S'].sort_values(by='Loja')
-        if df_mix.empty:
-            return None, 0, "Item não possui lojas ativas no Mix (Mix='S')"
-
         # --- INTELIGÊNCIA AUTOMÁTICA DE ZERADOS ---
-        # Se o modo for 2 (Zerados) e não vierem lojas manuais, 
-        # o sistema busca automaticamente quem está com Estoque_Num == 0
         if modo == 2 and not lojas_zeradas:
-            lojas_zeradas = df_mix[df_mix['Estoque_Num'] <= 0]['Loja'].tolist()
+            # Detecta lojas zeradas apenas entre as que têm Mix 'S'
+            lojas_zeradas = df_item_completo[(df_item_completo['Mix Loja'] == 'S') & (df_item_completo['Estoque_Num'] <= 0)]['Loja'].tolist()
             print(f"🔍 Modo Zerados Automático: Detectadas {len(lojas_zeradas)} lojas sem estoque.")
 
         # Proteção contra o bug do NaN no math.floor
-        estoque_str = str(df_item.iloc[0]['Estoque Lojas']).replace(',', '.')
+        estoque_str = str(df_item_completo.iloc[0]['Estoque Lojas']).replace(',', '.')
         estoque_cd_un = pd.to_numeric(estoque_str, errors='coerce')
         if pd.isna(estoque_cd_un):
-            estoque_cd_un = 0 # Previne o erro do math.floor
+            estoque_cd_un = 0 
             
-        estoque_cd_cx = math.floor(estoque_cd_un / 24) # Supondo fator 24 (pode ser dinâmico depois)
+        estoque_cd_cx = math.floor(estoque_cd_un / 24) 
         
         if estoque_cd_cx <= 0:
-            return df_mix, estoque_cd_cx, "Estoque CD Zerado/Negativo"
+            return df_item_completo, estoque_cd_cx, "Estoque CD Zerado/Negativo"
 
         distribuicao = {}
         caixas_disp = estoque_cd_cx
 
-        for _, loja in df_mix.iterrows():
+        for _, loja in df_item_completo.iterrows():
             lj = int(loja['Loja'])
+            tem_mix = (loja['Mix Loja'] == 'S')
             
+            # Se não tem mix ou se está no modo zerados e a loja não está zerada -> Qtd 0 (Pula campo)
+            if not tem_mix:
+                distribuicao[lj] = {'qtd': 0, 'motivo': 'Sem Mix (Pulando)'}
+                continue
+
             if modo == 2:
                 if lj not in lojas_zeradas:
-                    distribuicao[lj] = {'qtd': 0, 'motivo': 'Ignorado (Não está zerada)'}
+                    distribuicao[lj] = {'qtd': 0, 'motivo': 'Não está zerada (Pulando)'}
                     continue
 
             if caixas_disp <= 0:
@@ -99,7 +101,7 @@ class MotorInteligencia:
             
             # --- O CÉREBRO EM AÇÃO ---
             if self.modelo_ia is not None:
-                # Se a IA foi treinada, ela faz a previsão baseada no seu histórico
+                # Previsão Machine Learning
                 cenario = pd.DataFrame({
                     'Estoque CD': [estoque_cd_un],
                     'Fator': [24],
@@ -113,10 +115,24 @@ class MotorInteligencia:
                 sugestao = math.ceil(previsao)
                 motivo = "Previsão Machine Learning"
             else:
-                # Regra Matemática (Se a IA falhar ou não tiver DB.txt)
-                necessidade = (loja['Media_Num'] * 30) - loja['Estoque_Num']
-                sugestao = math.ceil(necessidade / 24) if necessidade > 0 else 0
-                motivo = "Giro 30d N3ormal"
+                # Regra Matemática: (Média * 30 dias) - Estoque Atual
+                giro_mensal_un = loja['Media_Num'] * 30
+                necessidade_un = giro_mensal_un - loja['Estoque_Num']
+                sugestao = math.ceil(necessidade_un / 24) if necessidade_un > 0 else 0
+                motivo = "Giro 30d Normal"
+
+            # --- LEI DA RUPTURA ZERO (Prioridade) ---
+            # Se a loja está zerada e não é 28/29, garante pelo menos 1 caixa
+            if lj not in [28, 29] and loja['Estoque_Num'] <= 0 and sugestao <= 0:
+                sugestao = 1
+                motivo = "Ruptura Zero (Estoque 0)"
+
+            # --- PROTEÇÃO SAZONAL / DESPROPORCIONAL ---
+            # Se a sugestão for muito acima do giro mensal (ex: 1.5x), limitamos para segurança
+            giro_mensal_cx = math.ceil((loja['Media_Num'] * 30) / 24)
+            if sugestao > (giro_mensal_cx * 1.5) and sugestao > 1:
+                sugestao = giro_mensal_cx
+                motivo += " -> Limitado p/ Giro (Proteção Sazonal)"
 
             # Trava de Segurança Final (Regras Inquebráveis)
             if sugestao > 0:
