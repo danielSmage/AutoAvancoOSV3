@@ -8,9 +8,15 @@ load_dotenv()
 class AutenticadorFirebase:
     def __init__(self):
         # As chaves agora são carregadas do ambiente para maior segurança
-        self.API_KEY = os.getenv("FIREBASE_API_KEY")
-        self.PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID")
+        self.API_KEY = os.getenv("FIREBASE_API_KEY", "").strip()
+        self.PROJECT_ID = os.getenv("FIREBASE_PROJECT_ID", "").strip()
         
+        # Log de segurança para conferência (mostra apenas o início e fim da chave)
+        if self.API_KEY:
+            print(f"🔑 Chave carregada: {self.API_KEY[:5]}...{self.API_KEY[-5:]}")
+        else:
+            print("❌ ERRO: FIREBASE_API_KEY não encontrada no arquivo .env!")
+
         # Configuração de Proxy
         self.proxies = {
             "http": os.getenv("HTTP_PROXY"),
