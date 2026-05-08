@@ -36,19 +36,25 @@ class MotorInteligencia:
                 if 'Item' in df_treino.columns and 'MDV' in df_treino.columns:
                     self.media_historica_item = df_treino.groupby('Item')['MDV'].mean().to_dict()
 
+                # Mapeia o giro histórico para cada linha do treino para a IA aprender com ele
+                if 'Item' in df_treino.columns:
+                    df_treino['Giro_Historico'] = df_treino['Item'].map(self.media_historica_item).fillna(0)
+                else:
+                    df_treino['Giro_Historico'] = 0
+
                 if 'Peso' in df_treino.columns:
                     df_treino = df_treino.drop(columns=['Peso'])
                 df_treino = df_treino.fillna(0)
                 df_treino['Perfil_Loja'] = df_treino['Lj'].apply(lambda x: 1 if x in self.lojas_maiores else 0)
                 
-                # Variáveis que a IA usa para aprender
-                features = ['Estoque CD', 'Fator', 'Estoque Loja', 'MDV', 'Norma', 'Lastro', 'Perfil_Loja']
+                # Variáveis que a IA usa para aprender (Incluindo Giro Histórico agora!)
+                features = ['Estoque CD', 'Fator', 'Estoque Loja', 'MDV', 'Norma', 'Lastro', 'Perfil_Loja', 'Giro_Historico']
                 X = df_treino[features]
                 y = df_treino['Quantidade']
                 
                 self.modelo_ia = RandomForestRegressor(n_estimators=100, random_state=42)
                 self.modelo_ia.fit(X, y)
-                print(f"✅ IA Treinada e {len(self.media_historica_item)} itens com histórico mapeado!")
+                print(f"✅ Machine Learning Treinado: {len(self.media_historica_item)} itens com memória inteligente!")
             except Exception as e:
                 print(f"⚠️ Erro ao treinar IA: {e}")
         else:
@@ -90,7 +96,6 @@ class MotorInteligencia:
             
             # Se o MDV atual for desproporcional (>3x o histórico), usa o histórico
             if media_hist > 0 and mdv_final > (media_hist * 3):
-                print(f"⚠️ Sazonalidade Detectada (Item {codigo_int}, Loja {lj}): {mdv_final} -> Usando Histórico {media_hist}")
                 mdv_final = media_hist
 
             lojas_processar.append({
@@ -129,7 +134,8 @@ class MotorInteligencia:
                     cenario = pd.DataFrame({
                         'Estoque CD': [estoque_cd_un], 'Fator': [24],
                         'Estoque Loja': [info['estoque']], 'MDV': [info['mdv']],
-                        'Norma': [45], 'Lastro': [9], 'Perfil_Loja': [info['perfil']]
+                        'Norma': [45], 'Lastro': [9], 'Perfil_Loja': [info['perfil']],
+                        'Giro_Historico': [media_hist] # Injeta o dado histórico na previsão
                     })
                     previsao = self.modelo_ia.predict(cenario)[0]
                     sugestao = math.ceil(previsao)
@@ -147,25 +153,25 @@ class MotorInteligencia:
                     if info['perfil'] == 1: # Loja Maior
                         if (distribuicao[lj]['qtd'] + sugestao_extra) >= (45 * 0.90):
                             sugestao_extra = 45 - distribuicao[lj]['qtd']
-                            motivo_base += " + Pallet"
                         elif (distribuicao[lj]['qtd'] + sugestao_extra) > 9:
                             total = round((distribuicao[lj]['qtd'] + sugestao_extra) / 9) * 9
                             sugestao_extra = total - distribuicao[lj]['qtd']
-                            motivo_base += " + Lastro"
                     else: # Loja Menor
                         if (distribuicao[lj]['qtd'] + sugestao_extra) > 22:
                             sugestao_extra = 22 - distribuicao[lj]['qtd']
-                            motivo_base += " + Limite Meio Pallet"
 
                     if sugestao_extra > caixas_disp:
                         sugestao_extra = caixas_disp
                     
-                    distribuicao[lj]['qtd'] += sugestao_extra
+                    distribuicao[lj]['qtd'] += max(0, sugestao_extra) # TRAVA ANTI-NEGATIVO FINAL
                     distribuicao[lj]['motivo'] = motivo_base if distribuicao[lj]['motivo'] == 'Pendente' else "Urgência + Inteligência"
-                    caixas_disp -= sugestao_extra
+                    caixas_disp -= max(0, sugestao_extra)
 
         # Limpa motivos de quem ficou com zero
         for lj in distribuicao:
+            # Garante que NUNCA saia valor negativo na distribuição final
+            distribuicao[lj]['qtd'] = max(0, distribuicao[lj]['qtd'])
+            
             if distribuicao[lj]['qtd'] <= 0:
                 if not any(lp['loja'] == lj and lp['tem_mix'] for lp in lojas_processar):
                     distribuicao[lj]['motivo'] = "Sem Mix"
