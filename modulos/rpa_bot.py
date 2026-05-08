@@ -21,8 +21,8 @@ class RoboOperador:
             time.sleep(0.5)
 
         pyautogui.write(str(codigo))
-        # Removido o ENTER extra: o sistema já cai na Loja 1 sozinho.
-        time.sleep(2.0) # Espera um pouco mais para o sistema carregar o item
+        pyautogui.press('enter')
+        time.sleep(2.0) # Espera o sistema carregar o item
 
         if status_ia == "Estoque CD Zerado/Negativo" or cd_total <= 0:
             print("⚠️ Sem estoque no CD. Apertando ESC e N...")
