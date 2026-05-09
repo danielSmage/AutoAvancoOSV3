@@ -15,9 +15,9 @@ class AutenticadorFirebase:
         
         # Log de segurança para conferência (mostra apenas o início e fim da chave)
         if self.API_KEY:
-            print(f"🔑 Chave carregada: {self.API_KEY[:5]}...{self.API_KEY[-5:]}")
+            print(f"[KEY] Chave carregada: {self.API_KEY[:5]}...{self.API_KEY[-5:]}")
         else:
-            print("❌ ERRO: FIREBASE_API_KEY não encontrada no arquivo .env!")
+            print("[ERRO] FIREBASE_API_KEY não encontrada no arquivo .env!")
 
         # Configuração de Proxy
         self.proxies = {
@@ -38,10 +38,10 @@ class AutenticadorFirebase:
                 dados = resposta.json()
                 return dados['fields']['status_ativo']['booleanValue']
             
-            print(f"⚠️ Erro no Firebase: Status {resposta.status_code}")
+            print(f"[AVISO] Erro no Firebase: Status {resposta.status_code}")
             return False
         except requests.exceptions.RequestException as e:
-            print(f"❌ Erro de Conexão: {e}")
+            print(f"[ERRO] Erro de Conexão: {e}")
             # Se falhar a conexão, avisamos que pode ser o Proxy/Internet
             return False
 

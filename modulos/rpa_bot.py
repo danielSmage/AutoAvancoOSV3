@@ -43,7 +43,7 @@ class RoboOperador(BaseOperador):
         """
         Visão Computacional: verifica estabilidade da tela com timeout de 10s.
         """
-        self._log("👁️ Aguardando estabilidade da tela...")
+        self._log("[VISAO] Aguardando estabilidade da tela...")
         timeout = 10
         start_time = time.time()
 
@@ -53,15 +53,15 @@ class RoboOperador(BaseOperador):
             p2 = pyautogui.screenshot(region=(0, 0, 400, 400))
 
             if p1 == p2:
-                self._log("✅ Tela estabilizada. Iniciando operação.")
+                self._log("[OK] Tela estabilizada. Iniciando operação.")
                 return True
             time.sleep(0.2)
 
-        self._log("⚠️ Timeout de estabilidade — prosseguindo mesmo assim.")
+        self._log("[AVISO] Timeout de estabilidade — prosseguindo mesmo assim.")
         return False
 
     def executar_item(self, codigo, distribuicao, cd_total, status_ia, fator=24):
-        self._log(f"\n🤖 Operando Item {codigo}...")
+        self._log(f"\n[ROBO] Operando Item {codigo}...")
 
         self.enxergar_sistema_pronto()
 
@@ -77,7 +77,7 @@ class RoboOperador(BaseOperador):
         time.sleep(2.8)  # Tempo calibrado para carregamento do ERP
 
         if status_ia == "Estoque CD Zerado/Negativo" or cd_total <= 0:
-            self._log(f"⚠️ Item {codigo}: Sem estoque no CD. Pulando...")
+            self._log(f"[AVISO] Item {codigo}: Sem estoque no CD. Pulando...")
             pyautogui.press('esc')
             time.sleep(0.8)
             pyautogui.press('n')
@@ -116,7 +116,7 @@ class RoboOperador(BaseOperador):
 
         # Confirmação final de gravação
         pyautogui.write('s')
-        self._log(f"✅ Item {codigo} salvo com sucesso!")
+        self._log(f"[OK] Item {codigo} salv com sucesso!")
         self.contador_sessao += 1
 
         # --- RETROALIMENTAÇÃO DO DB.TXT ---
@@ -159,9 +159,9 @@ class RoboOperador(BaseOperador):
                     df_novo.to_csv(caminho_db, mode='a', sep='\t', index=False, header=False)
                 else:
                     df_novo.to_csv(caminho_db, mode='w', sep='\t', index=False, header=True)
-                self._log(f"📝 DB.txt atualizado com {len(linhas)} linha(s) do item {codigo}.")
+                self._log(f"[DB] DB.txt atualizado com {len(linhas)} linha(s) do item {codigo}.")
         except Exception as e:
-            self._log(f"⚠️ Erro ao salvar no DB.txt: {e}")
+            self._log(f"[AVISO] Erro ao salvar no DB.txt: {e}")
 
     def gerar_relatorio_csv(self):
         if not self.relatorio:
@@ -172,4 +172,4 @@ class RoboOperador(BaseOperador):
         df_rel = pd.DataFrame(self.relatorio)
         nome_arquivo = os.path.join(pasta_rel, f"Envios_Inteligentes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
         df_rel.to_csv(nome_arquivo, index=False, sep=';', encoding='utf-8-sig')
-        self._log(f"\n📊 Relatório gerado: {nome_arquivo}")
+        self._log(f"\n[RELATORIO] Relatório gerado: {nome_arquivo}")

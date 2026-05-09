@@ -265,9 +265,11 @@ def abrir_tela_login():
     ctk.CTkLabel(login, text="ACESSO RESTRITO", font=ctk.CTkFont(size=20, weight="bold")).pack(pady=(40, 30))
 
     entry_email = ctk.CTkEntry(login, placeholder_text="Seu E-mail", width=250, height=40)
+    entry_email.insert(0, "leandro@passos.com")
     entry_email.pack(pady=10)
 
     entry_senha = ctk.CTkEntry(login, placeholder_text="Sua Senha", width=250, height=40, show="*")
+    entry_senha.insert(0, "leandro")
     entry_senha.pack(pady=10)
 
     def executar_login(event=None):

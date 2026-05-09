@@ -5,11 +5,11 @@ from sklearn.ensemble import RandomForestRegressor
 
 class MotorInteligencia:
     def __init__(self, caminho_db, caminho_estoque99):
-        print("🧠 Inicializando Motor de IA...")
+        print("[IA] Inicializando Motor de IA...")
         self.lojas_maiores = [1, 3, 4, 5, 6, 7, 8, 9, 11, 14, 15, 16, 17, 20, 22]
         
         # 1. LENDO O ESTOQUE99
-        print("📂 Lendo o estoque atual...")
+        print("[ARQUIVO] Lendo o estoque atual...")
         try:
             self.df_estoque = pd.read_csv(caminho_estoque99, sep=';', encoding='latin1', low_memory=False)
         except Exception:
@@ -38,7 +38,7 @@ class MotorInteligencia:
         self.media_historica_item = {} # Dicionário {codigo: media_mdv}
         
         if os.path.exists(caminho_db):
-            print("🤖 Analisando histórico (DB.txt) para cálculo de sazonalidade...")
+            print("[IA] Analisando histórico (DB.txt) para cálculo de sazonalidade...")
             try:
                 df_treino = pd.read_csv(caminho_db, sep='\t')
                 
@@ -64,11 +64,11 @@ class MotorInteligencia:
                 
                 self.modelo_ia = RandomForestRegressor(n_estimators=100, random_state=42)
                 self.modelo_ia.fit(X, y)
-                print(f"✅ Machine Learning Treinado: {len(self.media_historica_item)} itens com memória inteligente!")
+                print(f"[OK] Machine Learning Treinado: {len(self.media_historica_item)} itens com memória inteligente!")
             except Exception as e:
-                print(f"⚠️ Erro ao treinar IA: {e}")
+                print(f"[AVISO] Erro ao treinar IA: {e}")
         else:
-            print("⚠️ Arquivo DB.txt não encontrado. Sem base histórica.")
+            print("[AVISO] Arquivo DB.txt não encontrado. Sem base histórica.")
 
     def calcular_distribuicao(self, codigo, modo=1, lojas_zeradas=None):
         """
@@ -110,7 +110,7 @@ class MotorInteligencia:
             ]
             lojas_zeradas = df_zeradas['Loja'].astype(int).tolist()
             if not lojas_zeradas:
-                print(f"ℹ️ Item {codigo_int}: Nenhuma loja zerada encontrada. Usando distribuição padrão.")
+                print(f"[INFO] Item {codigo_int}: Nenhuma loja zerada encontrada. Usando distribuição padrão.")
                 modo = 1  # Cai para padrão se não há lojas zeradas
 
         distribuicao = {}
