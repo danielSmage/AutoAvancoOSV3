@@ -23,6 +23,16 @@ class MotorInteligencia:
         self.df_estoque['Media_Num'] = pd.to_numeric(self.df_estoque['Media'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
         self.df_estoque['Estoque_Num'] = pd.to_numeric(self.df_estoque['Estoque'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
 
+        # Normaliza coluna de fator/aplicação para uso dinâmico
+        colunas_fator = [col for col in self.df_estoque.columns if 'plicac' in col or 'ator' in col.lower()]
+        self.coluna_fator = colunas_fator[0] if colunas_fator else None
+        if self.coluna_fator:
+            self.df_estoque['Fator_Num'] = pd.to_numeric(
+                self.df_estoque[self.coluna_fator].astype(str).str.replace(',', '.'), errors='coerce'
+            ).fillna(24)
+        else:
+            self.df_estoque['Fator_Num'] = 24
+
         # 2. TREINANDO O CLONE COMPORTAMENTAL E CALCULANDO MÉDIA HISTÓRICA
         self.modelo_ia = None
         self.media_historica_item = {} # Dicionário {codigo: media_mdv}
@@ -47,7 +57,7 @@ class MotorInteligencia:
                 df_treino = df_treino.fillna(0)
                 df_treino['Perfil_Loja'] = df_treino['Lj'].apply(lambda x: 1 if x in self.lojas_maiores else 0)
                 
-                # Variáveis que a IA usa para aprender (Incluindo Giro Histórico agora!)
+                # Variáveis que a IA usa para aprender
                 features = ['Estoque CD', 'Fator', 'Estoque Loja', 'MDV', 'Norma', 'Lastro', 'Perfil_Loja', 'Giro_Historico']
                 X = df_treino[features]
                 y = df_treino['Quantidade']
@@ -63,28 +73,49 @@ class MotorInteligencia:
     def calcular_distribuicao(self, codigo, modo=1, lojas_zeradas=None):
         """
         Calcula a distribuição em DUAS ONDAS:
-        1. Prioridade absoluta para lojas zeradas (exceto 28/29).
-        2. Distribuição normal do restante baseada em IA e Giro.
+        1. Prioridade absoluta para lojas zeradas.
+        2. Distribuição inteligente baseada em IA e Giro.
+
+        Modo 1 = Distribuição Padrão
+        Modo 2 = Focar lojas zeradas (detectadas automaticamente via estoque99)
         """
         codigo_int = int(codigo)
         df_item_completo = self.df_estoque[self.df_estoque['Codigo_Produto'] == codigo_int].sort_values(by='Loja')
-        
+
         if df_item_completo.empty:
             return None, 0, "Item não encontrado no estoque99"
 
-        # Proteção contra o bug do NaN no math.floor
+        # --- FATOR DINÂMICO ---
+        # Tenta pegar o fator real do produto no estoque99
+        fator_produto = 24  # fallback seguro
+        if 'Fator_Num' in df_item_completo.columns:
+            fator_val = df_item_completo.iloc[0]['Fator_Num']
+            if pd.notna(fator_val) and fator_val > 0:
+                fator_produto = int(fator_val)
+
+        # Proteção contra o bug do NaN
         estoque_str = str(df_item_completo.iloc[0]['Estoque Lojas']).replace(',', '.')
         estoque_cd_un = pd.to_numeric(estoque_str, errors='coerce')
         if pd.isna(estoque_cd_un):
-            estoque_cd_un = 0 
-            
-        estoque_cd_cx = math.floor(estoque_cd_un / 24) 
+            estoque_cd_un = 0
+
+        estoque_cd_cx = math.floor(estoque_cd_un / fator_produto)
         if estoque_cd_cx <= 0:
             return df_item_completo, estoque_cd_cx, "Estoque CD Zerado/Negativo"
 
+        # --- MODO ZERADOS: detecta lojas zeradas automaticamente ---
+        if modo == 2:
+            df_zeradas = df_item_completo[
+                (df_item_completo['Estoque_Num'] <= 0) & (df_item_completo['Mix Loja'] == 'S')
+            ]
+            lojas_zeradas = df_zeradas['Loja'].astype(int).tolist()
+            if not lojas_zeradas:
+                print(f"ℹ️ Item {codigo_int}: Nenhuma loja zerada encontrada. Usando distribuição padrão.")
+                modo = 1  # Cai para padrão se não há lojas zeradas
+
         distribuicao = {}
         caixas_disp = estoque_cd_cx
-        
+
         # --- FILTRO DE SAZONALIDADE ---
         media_hist = self.media_historica_item.get(codigo_int, 0)
 
@@ -94,7 +125,6 @@ class MotorInteligencia:
             lj = int(loja['Loja'])
             mdv_final = loja['Media_Num']
             
-            # Se o MDV atual for desproporcional (>3x o histórico), usa o histórico
             if media_hist > 0 and mdv_final > (media_hist * 3):
                 mdv_final = media_hist
 
@@ -114,68 +144,66 @@ class MotorInteligencia:
             lj = info['loja']
             if not info['tem_mix'] or caixas_disp <= 0:
                 continue
-            
-            # Prioriza lojas zeradas (Exceto 28/29)
+
+            # Modo Zerados: trabalha APENAS nas lojas zeradas detectadas
+            if modo == 2 and lojas_zeradas and lj not in lojas_zeradas:
+                distribuicao[lj] = {'qtd': 0, 'motivo': 'Ignorado (Modo Zerados)'}
+                continue
+
             if info['estoque'] <= 0 and lj not in [28, 29]:
                 distribuicao[lj] = {'qtd': 1, 'motivo': 'Prioridade: Anti-Zera'}
                 caixas_disp -= 1
 
         # ==========================================
-        # ONDA 2: DISTRIBUIÇÃO INTELIGENTE (Restante)
+        # ONDA 2: DISTRIBUIÇÃO INTELIGENTE (IA/Giro)
         # ==========================================
         if caixas_disp > 0:
             for info in lojas_processar:
                 lj = info['loja']
                 if not info['tem_mix'] or caixas_disp <= 0:
                     continue
+
+                # Modo Zerados: pula lojas que já foram marcadas como ignoradas
+                if modo == 2 and lojas_zeradas and lj not in lojas_zeradas:
+                    continue
                 
-                # Calcula a sugestão baseada em IA ou Giro
                 if self.modelo_ia is not None:
                     cenario = pd.DataFrame({
-                        'Estoque CD': [estoque_cd_un], 'Fator': [24],
+                        'Estoque CD': [estoque_cd_un], 'Fator': [fator_produto],
                         'Estoque Loja': [info['estoque']], 'MDV': [info['mdv']],
                         'Norma': [45], 'Lastro': [9], 'Perfil_Loja': [info['perfil']],
-                        'Giro_Historico': [media_hist] # Injeta o dado histórico na previsão
+                        'Giro_Historico': [media_hist]
                     })
                     previsao = self.modelo_ia.predict(cenario)[0]
                     sugestao = math.ceil(previsao)
-                    motivo_base = "Decisão IA"
+                    motivo_base = "Inteligência Claude/RF"
                 else:
                     necessidade = (info['mdv'] * 30) - info['estoque']
-                    sugestao = math.ceil(necessidade / 24) if necessidade > 0 else 0
-                    motivo_base = "Cálculo Giro"
+                    sugestao = math.ceil(necessidade / fator_produto) if necessidade > 0 else 0
+                    motivo_base = "Cálculo Giro (Fallback)"
 
-                # Desconta o que já foi enviado na Onda 1
                 sugestao_extra = max(0, sugestao - distribuicao[lj]['qtd'])
                 
                 if sugestao_extra > 0:
-                    # Trava de Segurança Final (Lastro/Pallet)
-                    if info['perfil'] == 1: # Loja Maior
-                        if (distribuicao[lj]['qtd'] + sugestao_extra) >= (45 * 0.90):
-                            sugestao_extra = 45 - distribuicao[lj]['qtd']
-                        elif (distribuicao[lj]['qtd'] + sugestao_extra) > 9:
-                            total = round((distribuicao[lj]['qtd'] + sugestao_extra) / 9) * 9
-                            sugestao_extra = total - distribuicao[lj]['qtd']
-                    else: # Loja Menor
-                        if (distribuicao[lj]['qtd'] + sugestao_extra) > 22:
-                            sugestao_extra = 22 - distribuicao[lj]['qtd']
+                    limite_loja = 45 if info['perfil'] == 1 else 22
+                    if (distribuicao[lj]['qtd'] + sugestao_extra) > limite_loja:
+                        sugestao_extra = limite_loja - distribuicao[lj]['qtd']
 
                     if sugestao_extra > caixas_disp:
                         sugestao_extra = caixas_disp
                     
-                    distribuicao[lj]['qtd'] += max(0, sugestao_extra) # TRAVA ANTI-NEGATIVO FINAL
-                    distribuicao[lj]['motivo'] = motivo_base if distribuicao[lj]['motivo'] == 'Pendente' else "Urgência + Inteligência"
-                    caixas_disp -= max(0, sugestao_extra)
+                    valor_final_onda = max(0, int(sugestao_extra))
+                    distribuicao[lj]['qtd'] += valor_final_onda
+                    distribuicao[lj]['motivo'] = motivo_base if distribuicao[lj]['motivo'] == 'Pendente' else "Urgência + IA"
+                    caixas_disp -= valor_final_onda
 
-        # Limpa motivos de quem ficou com zero
+        # --- VALIDAÇÃO FINAL DE SEGURANÇA ---
         for lj in distribuicao:
-            # Garante que NUNCA saia valor negativo na distribuição final
-            distribuicao[lj]['qtd'] = max(0, distribuicao[lj]['qtd'])
-            
+            distribuicao[lj]['qtd'] = max(0, int(distribuicao[lj]['qtd']))
             if distribuicao[lj]['qtd'] <= 0:
                 if not any(lp['loja'] == lj and lp['tem_mix'] for lp in lojas_processar):
                     distribuicao[lj]['motivo'] = "Sem Mix"
                 else:
-                    distribuicao[lj]['motivo'] = "Estoque OK ou CD Esgotado"
+                    distribuicao[lj]['motivo'] = "Estoque OK / CD Esgotado"
 
         return distribuicao, estoque_cd_cx, "Sucesso"

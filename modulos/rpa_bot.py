@@ -3,56 +3,86 @@ import time
 import pandas as pd
 import os
 from datetime import datetime
+from abc import ABC, abstractmethod
 
 pyautogui.FAILSAFE = True
 
-class RoboOperador:
-    def __init__(self, operador_nome):
+# ==========================================
+# BASE ABSTRATA — Prepara plug-in Telnet futuro
+# ==========================================
+class BaseOperador(ABC):
+    """Interface comum para qualquer operador (pyautogui ou Telnet futuro)."""
+
+    @abstractmethod
+    def executar_item(self, codigo, distribuicao, cd_total, status_ia, fator=24):
+        pass
+
+    @abstractmethod
+    def gerar_relatorio_csv(self):
+        pass
+
+
+# ==========================================
+# OPERADOR PYAUTOGUI — Atual (tela gráfica)
+# ==========================================
+class RoboOperador(BaseOperador):
+    def __init__(self, operador_nome, log_callback=None):
         self.relatorio = []
         self.operador = operador_nome
-        self.contador_sessao = 0 # Controla quantos itens foram feitos nesta rodada
+        self.contador_sessao = 0
+        self.log_callback = log_callback  # Função da interface para exibir mensagens
+
+    def _log(self, msg):
+        """Envia mensagem para a interface ou para o terminal."""
+        if self.log_callback:
+            self.log_callback(msg)
+        else:
+            print(msg)
 
     def enxergar_sistema_pronto(self):
         """
-        Visão Computacional Básica: 
-        Tira um print da região do cursor para ver se o sistema carregou.
-        Como não temos imagens padrão, usamos uma verificação de estabilidade.
+        Visão Computacional: verifica estabilidade da tela com timeout de 10s.
         """
-        print("👁️ Jarvis está observando a tela...")
-        # Tira dois prints rápidos para ver se a tela parou de "piscar" (carregou)
-        p1 = pyautogui.screenshot(region=(0,0, 300, 300)) 
-        time.sleep(0.5)
-        p2 = pyautogui.screenshot(region=(0,0, 300, 300))
-        
-        if p1 == p2:
-            return True
+        self._log("👁️ Aguardando estabilidade da tela...")
+        timeout = 10
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            p1 = pyautogui.screenshot(region=(0, 0, 400, 400))
+            time.sleep(0.4)
+            p2 = pyautogui.screenshot(region=(0, 0, 400, 400))
+
+            if p1 == p2:
+                self._log("✅ Tela estabilizada. Iniciando operação.")
+                return True
+            time.sleep(0.2)
+
+        self._log("⚠️ Timeout de estabilidade — prosseguindo mesmo assim.")
         return False
 
-    def executar_item(self, codigo, distribuicao, cd_total, status_ia):
-        print(f"\n🤖 Operando Item {codigo}...")
-        
-        # Garante que o sistema está pronto antes de começar
+    def executar_item(self, codigo, distribuicao, cd_total, status_ia, fator=24):
+        self._log(f"\n🤖 Operando Item {codigo}...")
+
         self.enxergar_sistema_pronto()
 
-        # Só dá as setinhas se NÃO for o primeiro item da lista
         if self.contador_sessao > 0:
             pyautogui.press(['up', 'up'])
             time.sleep(0.5)
 
-        # Blindagem: Limpa o campo antes de digitar (Segurança Extra)
-        pyautogui.press('backspace', presses=10)
-        
+        # Limpa o campo (segurança extra)
+        pyautogui.press('backspace', presses=8)
+
         pyautogui.write(str(codigo))
         pyautogui.press('enter')
-        time.sleep(2.5) # Tempo para o Avanço carregar os dados do item
+        time.sleep(2.8)  # Tempo calibrado para carregamento do ERP
 
         if status_ia == "Estoque CD Zerado/Negativo" or cd_total <= 0:
-            print("⚠️ Sem estoque no CD. Apertando ESC e N...")
+            self._log(f"⚠️ Item {codigo}: Sem estoque no CD. Pulando...")
             pyautogui.press('esc')
-            time.sleep(1.0)
+            time.sleep(0.8)
             pyautogui.press('n')
-            time.sleep(1.5)
-            
+            time.sleep(1.2)
+
             self.relatorio.append({
                 'DataHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 'Operador': self.operador,
@@ -61,37 +91,85 @@ class RoboOperador:
             return
 
         for loja_id, dados in distribuicao.items():
-            qtd = dados['qtd']
-            
-            # TRAVA ANTI-NEGATIVO ABSOLUTA
+            qtd = int(dados['qtd'])
+
+            # Trava anti-negativo no nível de hardware
             if qtd > 0:
-                # Digita apenas números positivos
-                pyautogui.write(str(int(qtd)))
-            
+                pyautogui.write(str(qtd))
+                self._log(f"   Loja {loja_id}: {qtd} cx → {dados['motivo']}")
+            else:
+                self._log(f"   Loja {loja_id}: 0 cx → {dados.get('motivo', 'Ignorada')}")
+
             pyautogui.press(['enter', 'enter'])
-            time.sleep(0.3) # Cadência estável
-            
+            time.sleep(0.25)
+
             self.relatorio.append({
                 'DataHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 'Operador': self.operador,
-                'Codigo': codigo, 'Loja': loja_id, 'Qtd_Enviada': max(0, qtd), 'Motivo': dados['motivo']
+                'Codigo': codigo, 'Loja': loja_id,
+                'Qtd_Enviada': max(0, qtd), 'Motivo': dados['motivo']
             })
 
         time.sleep(0.5)
         pyautogui.press(['enter', 'enter'])
-        time.sleep(0.8)
-        
-        # Confirmação final
+        time.sleep(1.0)
+
+        # Confirmação final de gravação
         pyautogui.write('s')
-        print(f"✅ Item {codigo} salvo!")
-        self.contador_sessao += 1 
-        time.sleep(5) # Espera o sistema gravar antes do próximo
+        self._log(f"✅ Item {codigo} salvo com sucesso!")
+        self.contador_sessao += 1
+
+        # --- RETROALIMENTAÇÃO DO DB.TXT ---
+        self._registrar_no_db(codigo, distribuicao, cd_total, fator)
+
+        time.sleep(4)  # Pausa para o banco de dados do ERP processar
+
+    def _registrar_no_db(self, codigo, distribuicao, cd_total, fator):
+        """
+        Salva cada distribuição no DB.txt para treinar a IA na próxima sessão.
+        Formato compatível com o que o ai_core.py já lê.
+        """
+        try:
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            caminho_db = os.path.join(base_dir, 'dados', 'DB.txt')
+            data_hoje = datetime.now().strftime("%d/%m/%Y")
+
+            linhas = []
+            for loja_id, dados in distribuicao.items():
+                qtd = int(dados.get('qtd', 0))
+                if qtd > 0:
+                    linha = {
+                        'Lj': loja_id,
+                        'Data': data_hoje,
+                        'Item': codigo,
+                        'Quantidade': qtd,
+                        'Estoque CD': cd_total * fator,  # Volta para unidades
+                        'Fator': fator,
+                        'Estoque Loja': 0,  # Não temos esse dado no momento da operação
+                        'MDV': 0,           # Idem
+                        'Norma': 45,
+                        'Lastro': 9
+                    }
+                    linhas.append(linha)
+
+            if linhas:
+                df_novo = pd.DataFrame(linhas)
+                # Adiciona ao arquivo existente (ou cria se não existir)
+                if os.path.exists(caminho_db):
+                    df_novo.to_csv(caminho_db, mode='a', sep='\t', index=False, header=False)
+                else:
+                    df_novo.to_csv(caminho_db, mode='w', sep='\t', index=False, header=True)
+                self._log(f"📝 DB.txt atualizado com {len(linhas)} linha(s) do item {codigo}.")
+        except Exception as e:
+            self._log(f"⚠️ Erro ao salvar no DB.txt: {e}")
 
     def gerar_relatorio_csv(self):
         if not self.relatorio:
             return
-        os.makedirs("relatorios", exist_ok=True)
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        pasta_rel = os.path.join(base_dir, 'relatorios')
+        os.makedirs(pasta_rel, exist_ok=True)
         df_rel = pd.DataFrame(self.relatorio)
-        nome_arquivo = f"relatorios/Envios_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        nome_arquivo = os.path.join(pasta_rel, f"Envios_Inteligentes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
         df_rel.to_csv(nome_arquivo, index=False, sep=';', encoding='utf-8-sig')
-        print(f"\n📊 Relatório gerado: {nome_arquivo}")
+        self._log(f"\n📊 Relatório gerado: {nome_arquivo}")

@@ -3,3 +3,4 @@ pyautogui
 pandas
 scikit-learn
 python-dotenv
+customtkinter
