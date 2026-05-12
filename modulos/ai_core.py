@@ -39,50 +39,40 @@ class MotorInteligencia:
         self.modelo_ia = None
         self.media_historica_item = {} # Dicionário {codigo: media_mdv}
         
-        if os.path.exists(caminho_db):
-            print("[IA] Analisando histórico (DB.txt) para cálculo de sazonalidade...")
+        caminho_datasimul = os.path.join(os.path.dirname(caminho_db), 'datasimul.csv')
+        if os.path.exists(caminho_datasimul):
+            print("[IA] Lendo datasimul.csv para treinamento do Machine Learning...")
             try:
-                df_treino = pd.read_csv(caminho_db, sep='\t')
-
-                # Compatibilidade: DB.txt antigo usa 'Estoque' em vez de 'Estoque CD'
-                if 'Estoque CD' not in df_treino.columns and 'Estoque' in df_treino.columns:
-                    df_treino.rename(columns={'Estoque': 'Estoque CD'}, inplace=True)
-
-                # Converte colunas que podem vir como string (separador de milhar ou vírgula decimal)
-                for col in ['Estoque CD', 'Estoque Loja', 'MDV', 'Fator', 'Norma', 'Lastro']:
+                df_treino = pd.read_csv(caminho_datasimul, sep=';', encoding='latin1', low_memory=False)
+                
+                # Limpa e converte as colunas numéricas importantes
+                # Col 6: Quantidade (Target), Col 7: Estoque, Col 9: Fator
+                for col in ['Quantidade', 'Estoque', 'Fator']:
                     if col in df_treino.columns:
                         df_treino[col] = pd.to_numeric(
                             df_treino[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
                             errors='coerce'
-                        )
-
-                # Calcula a média do MDV histórico por item
-                if 'Item' in df_treino.columns and 'MDV' in df_treino.columns:
-                    self.media_historica_item = df_treino.groupby('Item')['MDV'].mean().to_dict()
-
-                # Mapeia o giro histórico para cada linha do treino para a IA aprender com ele
-                if 'Item' in df_treino.columns:
-                    df_treino['Giro_Historico'] = df_treino['Item'].map(self.media_historica_item).fillna(0)
+                        ).fillna(0)
+                        
+                # Adiciona Perfil da Loja
+                if 'Lj' in df_treino.columns:
+                    df_treino['Lj'] = pd.to_numeric(df_treino['Lj'], errors='coerce').fillna(0)
+                    df_treino['Perfil_Loja'] = df_treino['Lj'].apply(lambda x: 1 if x in self.lojas_maiores else 0)
                 else:
-                    df_treino['Giro_Historico'] = 0
-
-                if 'Peso' in df_treino.columns:
-                    df_treino = df_treino.drop(columns=['Peso'])
-                df_treino = df_treino.fillna(0)
-                df_treino['Perfil_Loja'] = df_treino['Lj'].apply(lambda x: 1 if x in self.lojas_maiores else 0)
+                    df_treino['Perfil_Loja'] = 0
 
                 # Variáveis que a IA usa para aprender
-                features = ['Estoque CD', 'Fator', 'Estoque Loja', 'MDV', 'Norma', 'Lastro', 'Perfil_Loja', 'Giro_Historico']
+                features = ['Estoque', 'Fator', 'Perfil_Loja']
                 X = df_treino[features]
                 y = df_treino['Quantidade']
 
                 self.modelo_ia = RandomForestRegressor(n_estimators=100, random_state=42)
                 self.modelo_ia.fit(X, y)
-                print(f"[OK] Machine Learning Treinado: {len(self.media_historica_item)} itens com memória inteligente!")
+                print(f"[OK] Machine Learning Treinado com {len(df_treino)} registros do datasimul.csv!")
             except Exception as e:
-                print(f"[AVISO] Erro ao treinar IA: {e}")
+                print(f"[AVISO] Erro ao treinar IA com datasimul.csv: {e}")
         else:
-            print("[AVISO] Arquivo DB.txt não encontrado. Sem base histórica.")
+            print("[AVISO] Arquivo datasimul.csv não encontrado. Sem base histórica de digitação.")
 
     def calcular_distribuicao(self, codigo, modo=1, lojas_zeradas=None):
         """
@@ -201,6 +191,22 @@ class MotorInteligencia:
 
                 necessidade_un = (mdv * cobertura) - info['estoque']
                 necessidade_cx = math.ceil(necessidade_un / fator_produto) if necessidade_un > 0 else 0
+
+                # --- HÍBRIDO (Matemática + IA) ---
+                # Faz uma média entre a matemática ideal (DDV) e o padrão de digitação humana (datasimul)
+                if self.modelo_ia is not None:
+                    try:
+                        import warnings
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            df_pred = pd.DataFrame([[info['estoque'], fator_produto, info['perfil']]], columns=['Estoque', 'Fator', 'Perfil_Loja'])
+                            pred_ia = self.modelo_ia.predict(df_pred)[0]
+                            # Ponderação: 50% Matemática Ideal + 50% Histórico Humano
+                            necessidade_hibrida = math.ceil((necessidade_cx + max(0, pred_ia)) / 2.0)
+                            necessidade_cx = necessidade_hibrida
+                    except Exception:
+                        pass # Fallback silencioso para matemática pura em caso de erro
+
                 ja_tem = distribuicao[lj]['qtd']  # alocado na Onda 1
                 extra_cx = max(0, necessidade_cx - ja_tem)
 
