@@ -72,16 +72,16 @@ class RoboOperador(BaseOperador):
         # Limpa o campo (segurança extra)
         pyautogui.press('backspace', presses=8)
 
-        pyautogui.write(str(codigo))
+        pyautogui.write(str(codigo), interval=0.05)
         pyautogui.press('enter')
-        time.sleep(2.8)  # Tempo calibrado para carregamento do ERP
+        time.sleep(4.0)  # Tempo MANTIDO e AUMENTADO para 4 segundos para garantir que o ERP carregou
 
         if status_ia == "Estoque CD Zerado/Negativo" or cd_total <= 0:
-            self._log(f"[AVISO] Item {codigo}: Sem estoque no CD. Pulando...")
+            self._log(f"[AVISO] Item {codigo}: Sem estoque no CD. Cancelando operação...")
             pyautogui.press('esc')
-            time.sleep(0.8)
+            time.sleep(1.5)  # Aumentado para o usuário ver
             pyautogui.press('n')
-            time.sleep(1.2)
+            time.sleep(2.0)  # Aumentado para não atropelar
 
             self.relatorio.append({
                 'DataHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -95,13 +95,14 @@ class RoboOperador(BaseOperador):
 
             # Trava anti-negativo no nível de hardware
             if qtd > 0:
-                pyautogui.write(str(qtd))
+                pyautogui.write(str(qtd), interval=0.1) # Digitação mais devagar
                 self._log(f"   Loja {loja_id}: {qtd} cx → {dados['motivo']}")
             else:
                 self._log(f"   Loja {loja_id}: 0 cx → {dados.get('motivo', 'Ignorada')}")
 
+            time.sleep(0.1)
             pyautogui.press(['enter', 'enter'])
-            time.sleep(0.25)
+            time.sleep(0.6) # Dobro do tempo antigo (0.25 -> 0.6)
 
             self.relatorio.append({
                 'DataHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -110,9 +111,9 @@ class RoboOperador(BaseOperador):
                 'Qtd_Enviada': max(0, qtd), 'Motivo': dados['motivo']
             })
 
-        time.sleep(0.5)
-        pyautogui.press(['enter', 'enter'])
         time.sleep(1.0)
+        pyautogui.press(['enter', 'enter'])
+        time.sleep(1.5)
 
         # Confirmação final de gravação
         pyautogui.write('s')

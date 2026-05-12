@@ -7,8 +7,12 @@ class MotorInteligencia:
     def __init__(self, caminho_db, caminho_estoque99):
         print("[IA] Inicializando Motor de IA...")
         self.lojas_maiores = [1, 3, 4, 5, 6, 7, 8, 9, 11, 14, 15, 16, 17, 20, 22]
-        # Lojas reais do ERP (1 a 29, exceto 26, 28 e 29 que não são para digitar - bug ERP)
-        self.lojas_validas = [i for i in range(1, 30) if i not in [26, 28, 29]]
+        # Lojas válidas: 1 a 29. 
+        # ATENÇÃO: As lojas 26, 28 e 29 DEVEM estar no dicionário para que o robô 
+        # consiga dar os 'Enters' e pular os campos na tela do ERP. Se tirarmos do dicionário,
+        # o robô perde o alinhamento da tela!
+        self.lojas_validas = list(range(1, 30))
+        self.lojas_bugadas_erp = [26, 28, 29]
         
         # 1. LENDO O ESTOQUE99
         print("[ARQUIVO] Lendo o estoque atual...")
@@ -250,11 +254,18 @@ class MotorInteligencia:
 
         # --- VALIDAÇÃO FINAL DE SEGURANÇA ---
         for lj in distribuicao:
+            # Trava para pular as lojas bugadas do ERP
+            if lj in self.lojas_bugadas_erp:
+                distribuicao[lj]['qtd'] = 0
+                distribuicao[lj]['motivo'] = "Pulo Obrigatório (Bug ERP)"
+                continue
+
             distribuicao[lj]['qtd'] = max(0, int(distribuicao[lj]['qtd']))
             if distribuicao[lj]['qtd'] <= 0:
                 if not any(lp['loja'] == lj and lp['tem_mix'] for lp in lojas_processar):
                     distribuicao[lj]['motivo'] = "Sem Mix"
                 else:
-                    distribuicao[lj]['motivo'] = "Estoque OK / CD Esgotado"
+                    if distribuicao[lj]['motivo'] == 'Pendente':
+                        distribuicao[lj]['motivo'] = "Estoque Suficiente"
 
         return distribuicao, estoque_cd_cx, "Sucesso"
