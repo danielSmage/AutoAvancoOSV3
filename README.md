@@ -8,11 +8,12 @@
 
 -   **🔐 Autenticação Centralizada**: Integração com Firebase Auth para controle de acesso remoto.
 -   **🧠 Motor de Inteligência Artificial**: Utiliza `RandomForestRegressor` para aprender com o histórico de reposição (`DB.txt`) e prever a demanda ideal.
--   **🤖 Automação RPA Robusta**: Execução automática de lançamentos via `PyAutoGUI`, com tratamento de exceções e failsafe.
+-   **🤖 Automação RPA Robusta**: Execução via `PyAutoGUI` (Visual) ou `Telnet` (Direto ao Servidor), com tratamento de exceções.
 -   **📊 Relatórios Dinâmicos**: Geração automática de logs de execução em CSV para auditoria e controle.
 -   **🎯 Modos de Operação**:
     -   *Modo Padrão*: Distribuição balanceada baseada em giro e estoque.
     -   *Modo Zerados*: Foco total em urgências para lojas com ruptura de estoque.
+    -   *Modo Telnet*: Conexão direta com o servidor Avanço ERP para máxima precisão.
 
 ## 🛠️ Tecnologias Utilizadas
 
