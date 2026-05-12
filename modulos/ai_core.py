@@ -7,8 +7,8 @@ class MotorInteligencia:
     def __init__(self, caminho_db, caminho_estoque99):
         print("[IA] Inicializando Motor de IA...")
         self.lojas_maiores = [1, 3, 4, 5, 6, 7, 8, 9, 11, 14, 15, 16, 17, 20, 22]
-        # Lojas reais do ERP (1 a 29, exceto a 26 que não existe)
-        self.lojas_validas = [i for i in range(1, 30) if i != 26]
+        # Lojas reais do ERP (1 a 29, exceto 26, 28 e 29 que não são para digitar - bug ERP)
+        self.lojas_validas = [i for i in range(1, 30) if i not in [26, 28, 29]]
         
         # 1. LENDO O ESTOQUE99
         print("[ARQUIVO] Lendo o estoque atual...")
@@ -170,7 +170,7 @@ class MotorInteligencia:
                 distribuicao[lj] = {'qtd': 0, 'motivo': 'Ignorado (Modo Zerados)'}
                 continue
 
-            if info['estoque'] <= 0 and lj not in [28, 29]:
+            if info['estoque'] <= 0:
                 distribuicao[lj] = {'qtd': 1, 'motivo': 'Prioridade: Anti-Zera'}
                 caixas_disp -= 1
 
