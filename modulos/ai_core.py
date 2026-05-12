@@ -119,7 +119,11 @@ class MotorInteligencia:
                 print(f"[INFO] Item {codigo_int}: Nenhuma loja zerada encontrada. Usando distribuição padrão.")
                 modo = 1  # Cai para padrão se não há lojas zeradas
 
-        distribuicao = {lj: {'qtd': 0, 'motivo': 'Não listado'} for lj in self.lojas_validas}
+        # Descobre até qual loja este produto específico vai (evita "passar da digitação" na tela)
+        max_loja_produto = int(df_item_completo['Loja'].astype(int).max()) if not df_item_completo.empty else 0
+        lojas_validas_produto = [lj for lj in self.lojas_validas if lj <= max_loja_produto]
+        
+        distribuicao = {lj: {'qtd': 0, 'motivo': 'Não listado'} for lj in lojas_validas_produto}
         caixas_disp = estoque_cd_cx
 
         # --- FILTRO DE SAZONALIDADE ---
