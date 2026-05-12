@@ -41,7 +41,19 @@ class MotorInteligencia:
             print("[IA] Analisando histórico (DB.txt) para cálculo de sazonalidade...")
             try:
                 df_treino = pd.read_csv(caminho_db, sep='\t')
-                
+
+                # Compatibilidade: DB.txt antigo usa 'Estoque' em vez de 'Estoque CD'
+                if 'Estoque CD' not in df_treino.columns and 'Estoque' in df_treino.columns:
+                    df_treino.rename(columns={'Estoque': 'Estoque CD'}, inplace=True)
+
+                # Converte colunas que podem vir como string (separador de milhar ou vírgula decimal)
+                for col in ['Estoque CD', 'Estoque Loja', 'MDV', 'Fator', 'Norma', 'Lastro']:
+                    if col in df_treino.columns:
+                        df_treino[col] = pd.to_numeric(
+                            df_treino[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
+                            errors='coerce'
+                        )
+
                 # Calcula a média do MDV histórico por item
                 if 'Item' in df_treino.columns and 'MDV' in df_treino.columns:
                     self.media_historica_item = df_treino.groupby('Item')['MDV'].mean().to_dict()
@@ -56,12 +68,12 @@ class MotorInteligencia:
                     df_treino = df_treino.drop(columns=['Peso'])
                 df_treino = df_treino.fillna(0)
                 df_treino['Perfil_Loja'] = df_treino['Lj'].apply(lambda x: 1 if x in self.lojas_maiores else 0)
-                
+
                 # Variáveis que a IA usa para aprender
                 features = ['Estoque CD', 'Fator', 'Estoque Loja', 'MDV', 'Norma', 'Lastro', 'Perfil_Loja', 'Giro_Historico']
                 X = df_treino[features]
                 y = df_treino['Quantidade']
-                
+
                 self.modelo_ia = RandomForestRegressor(n_estimators=100, random_state=42)
                 self.modelo_ia.fit(X, y)
                 print(f"[OK] Machine Learning Treinado: {len(self.media_historica_item)} itens com memória inteligente!")
@@ -101,7 +113,7 @@ class MotorInteligencia:
 
         estoque_cd_cx = math.floor(estoque_cd_un / fator_produto)
         if estoque_cd_cx <= 0:
-            return df_item_completo, estoque_cd_cx, "Estoque CD Zerado/Negativo"
+            return None, estoque_cd_cx, "Estoque CD Zerado/Negativo"
 
         # --- MODO ZERADOS: detecta lojas zeradas automaticamente ---
         if modo == 2:
