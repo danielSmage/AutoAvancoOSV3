@@ -152,94 +152,101 @@ class MotorInteligencia:
             distribuicao[lj]['motivo'] = 'Pendente'
 
         # ==========================================
-        # ONDA 1: PRIORIDADE ABSOLUTA (Anti-Ruptura)
         # ==========================================
+        # DEFINIÇÃO DOS LIMITES DE COBERTURA (Min/Max)
+        # ==========================================
+        COBERTURA_MIN_GRANDE = 15
+        COBERTURA_MAX_GRANDE = 30
+        COBERTURA_MIN_PEQUENA = 7
+        COBERTURA_MAX_PEQUENA = 15
+
+        necessidades = []
         for info in lojas_processar:
             lj = info['loja']
-            if not info['tem_mix'] or caixas_disp <= 0:
+            if not info['tem_mix']:
                 continue
-
-            # Modo Zerados: trabalha APENAS nas lojas zeradas detectadas
             if modo == 2 and lojas_zeradas and lj not in lojas_zeradas:
-                distribuicao[lj] = {'qtd': 0, 'motivo': 'Ignorado (Modo Zerados)'}
                 continue
 
-            if info['estoque'] <= 0:
-                distribuicao[lj] = {'qtd': 1, 'motivo': 'Prioridade: Anti-Zera'}
-                caixas_disp -= 1
+            mdv = info['mdv']
+            # Se a loja não tem venda e ainda tem estoque, ignora
+            if mdv <= 0 and info['estoque'] > 0:
+                continue
+
+            # Cálculo Matemático dos limites
+            if mdv <= 0:
+                cx_min = 1 if info['estoque'] <= 0 else 0
+                cx_max = 1 if info['estoque'] <= 0 else 0
+            else:
+                cob_min = COBERTURA_MIN_GRANDE if info['perfil'] == 1 else COBERTURA_MIN_PEQUENA
+                cob_max = COBERTURA_MAX_GRANDE if info['perfil'] == 1 else COBERTURA_MAX_PEQUENA
+
+                nec_min_un = (mdv * cob_min) - info['estoque']
+                cx_min = math.ceil(nec_min_un / fator_produto) if nec_min_un > 0 else 0
+
+                nec_max_un = (mdv * cob_max) - info['estoque']
+                cx_max = math.ceil(nec_max_un / fator_produto) if nec_max_un > 0 else 0
+
+            # Predição do Padrão Humano (IA Treinada no datasimul)
+            pred_ia = cx_max  # Fallback: vai buscar o máximo
+            if self.modelo_ia is not None:
+                try:
+                    import warnings
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        df_pred = pd.DataFrame([[info['estoque'], fator_produto, info['perfil']]], columns=['Estoque', 'Fator', 'Perfil_Loja'])
+                        pred = self.modelo_ia.predict(df_pred)[0]
+                        pred_ia = max(0, int(round(pred)))
+                except Exception:
+                    pass
+
+            # O Alvo de Envio é a predição da IA, obrigatoriamente travada entre o Mínimo e o Máximo
+            cx_alvo = max(cx_min, min(pred_ia, cx_max))
+
+            if cx_alvo > 0 or cx_min > 0:
+                necessidades.append({
+                    'loja': lj,
+                    'cx_min': cx_min,
+                    'cx_alvo': cx_alvo,
+                    'ddv': info['ddv']
+                })
+
+        # Racionamento: Sempre prioriza lojas com DDV menor (maior urgência de ruptura)
+        necessidades.sort(key=lambda x: x['ddv'])
 
         # ==========================================
-        # ONDA 2: DISTRIBUIÇÃO POR MDV
-        # Cobertura alvo: 30 dias (lojas maiores) / 15 dias (lojas menores)
-        # Racionamento por DDV crescente quando CD é insuficiente
+        # ONDA 1: GARANTIR O MÍNIMO DE SEGURANÇA
+        # Se o CD tem pouco estoque, tenta dar o mínimo pra cada um antes de encher uma loja só.
         # ==========================================
-        COBERTURA_GRANDE = 30
-        COBERTURA_PEQUENA = 15
+        for n in necessidades:
+            lj = n['loja']
+            enviar_min = n['cx_min']
+            if enviar_min > 0 and caixas_disp > 0:
+                enviar = min(enviar_min, caixas_disp)
+                distribuicao[lj]['qtd'] += enviar
+                distribuicao[lj]['motivo'] = "Mínimo Garantido"
+                caixas_disp -= enviar
 
+        # ==========================================
+        # ONDA 2: BUSCAR O ALVO IDEAL (IA ou MÁXIMO)
+        # Se o CD tem estoque bom, completa até a quantidade que a equipe costuma digitar
+        # ==========================================
         if caixas_disp > 0:
-            # Passo 1: calcula necessidade de cada loja
-            necessidades = []
-            for info in lojas_processar:
-                lj = info['loja']
-                if not info['tem_mix']:
-                    continue
-                if modo == 2 and lojas_zeradas and lj not in lojas_zeradas:
-                    continue
-
-                cobertura = COBERTURA_GRANDE if info['perfil'] == 1 else COBERTURA_PEQUENA
-                mdv = info['mdv']
-
-                if mdv <= 0:
-                    # Sem MDV e com estoque → não envia (se zerado já foi tratado na Onda 1)
-                    continue
-
-                necessidade_un = (mdv * cobertura) - info['estoque']
-                necessidade_cx = math.ceil(necessidade_un / fator_produto) if necessidade_un > 0 else 0
-
-                # --- HÍBRIDO (Matemática + IA) ---
-                # Faz uma média entre a matemática ideal (DDV) e o padrão de digitação humana (datasimul)
-                if self.modelo_ia is not None:
-                    try:
-                        import warnings
-                        with warnings.catch_warnings():
-                            warnings.simplefilter("ignore")
-                            df_pred = pd.DataFrame([[info['estoque'], fator_produto, info['perfil']]], columns=['Estoque', 'Fator', 'Perfil_Loja'])
-                            pred_ia = self.modelo_ia.predict(df_pred)[0]
-                            # Ponderação: 50% Matemática Ideal + 50% Histórico Humano
-                            necessidade_hibrida = math.ceil((necessidade_cx + max(0, pred_ia)) / 2.0)
-                            necessidade_cx = necessidade_hibrida
-                    except Exception:
-                        pass # Fallback silencioso para matemática pura em caso de erro
-
-                ja_tem = distribuicao[lj]['qtd']  # alocado na Onda 1
-                extra_cx = max(0, necessidade_cx - ja_tem)
-
-                if extra_cx > 0:
-                    necessidades.append({
-                        'loja': lj,
-                        'extra_cx': extra_cx,
-                        'ddv': info['ddv'],
-                        'cobertura': cobertura
-                    })
-
-            # Passo 2: racionamento — ordena por DDV crescente (ruptura iminente primeiro)
-            necessidades.sort(key=lambda x: x['ddv'])
-
             for n in necessidades:
                 lj = n['loja']
-                if caixas_disp <= 0:
-                    if distribuicao[lj]['motivo'] == 'Pendente':
-                        distribuicao[lj]['motivo'] = "CD Insuficiente"
-                    continue
-                enviar = min(n['extra_cx'], caixas_disp)
-                motivo_onda2 = f"Giro MDV ({n['cobertura']}d)"
-                distribuicao[lj]['qtd'] += enviar
-                distribuicao[lj]['motivo'] = (
-                    "Urgência + Giro MDV"
-                    if distribuicao[lj]['motivo'] != 'Pendente'
-                    else motivo_onda2
-                )
-                caixas_disp -= enviar
+                ja_tem = distribuicao[lj]['qtd']
+                falta_pro_alvo = n['cx_alvo'] - ja_tem
+
+                if falta_pro_alvo > 0 and caixas_disp > 0:
+                    enviar = min(falta_pro_alvo, caixas_disp)
+                    distribuicao[lj]['qtd'] += enviar
+                    if ja_tem > 0:
+                        distribuicao[lj]['motivo'] = "Mín. + Complemento IA"
+                    else:
+                        distribuicao[lj]['motivo'] = "Alvo IA (datasimul)"
+                    caixas_disp -= enviar
+
+        # Se sobrou caixas e todas bateram o alvo, não fazemos nada (respeito ao limite máximo)
 
         # --- VALIDAÇÃO FINAL DE SEGURANÇA ---
         for lj in distribuicao:
