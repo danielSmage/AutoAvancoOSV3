@@ -1,0 +1,60 @@
+================================================================================
+TUTORIAL DE TESTE: INTEGRAÇÃO TELNET (AVANÇO PRO SYSTEM V2)
+================================================================================
+
+Este documento explica como ativar e testar o novo Motor Telnet, que faz o robô
+"enxergar" a tela diretamente do servidor sem precisar usar o PyAutoGUI ou o 
+seu teclado.
+
+================================================================================
+1. COMO PREPARAR O TESTE
+================================================================================
+Passo 1: Certifique-se de ter dado um `git pull` no computador da empresa 
+         para puxar as atualizações (incluindo o arquivo bot_telnet.py).
+
+Passo 2: Abra o aplicativo principal do robô (Avanço Pro System V2).
+
+Passo 3: Clique no botão "⚙️ Config" localizado no canto superior direito.
+
+Passo 4: Na tela de Configurações, verifique os dados:
+         - Host / IP: 192.168.70.250
+         - Porta: 23
+         - Tipo de Conexão: Selecione "telnet" (em vez de pyautogui).
+
+Passo 5: Clique em "SALVAR".
+
+================================================================================
+2. COMO O ROBÔ VAI AGIR AGORA
+================================================================================
+* INVISÍVEL: O robô NÃO vai mais mexer o seu mouse ou abrir a sua tela preta.
+* VELOZ: Ele se conecta direto no servidor do ERP por baixo dos panos.
+* INTELIGENTE: Ele faz todo o caminho que você ensinou:
+  1. Login no Linux (danielos / sl123456)
+  2. Seleciona Empresa 1
+  3. Faz Login no ERP (986 / 12344)
+  4. Limpa o erro de permissão com Enter (agora usando a tecla correta VT100)
+  5. Navega para "Administracao Materiais" e digita Filial 70
+  6. Percorre os submenus (P -> U -> I -> Enter -> S)
+  7. Processa a tela de digitação do produto.
+
+================================================================================
+3. RESOLUÇÃO DE PROBLEMAS (TROUBLESHOOTING)
+================================================================================
+Se o robô travar ou disser "Erro de navegação" na tela de LOG do sistema, é 
+porque o servidor mudou levemente alguma palavra e a gente precisa calibrar o 
+tempo de espera.
+
+Para voltarmos ao normal, basta:
+1. Clicar em "⚙️ Config" novamente.
+2. Mudar de "telnet" de volta para "pyautogui".
+3. Clicar em Salvar. 
+(Isso faz o robô voltar a digitar pelo teclado na sua frente com os novos delays 
+mais lentos que implementamos).
+
+================================================================================
+4. ALTERNATIVA CASO O TELNET SEJA BLOQUEADO
+================================================================================
+Se o TI da empresa bloquear a porta 23, lembre-se do nosso "Plano B":
+No programa SecureNetTerm, vá em Arquivo -> "Registrar Sessão..." (Log Session).
+Isso vai salvar o que aparece na tela em um .txt. Se isso for necessário no 
+futuro, basta me avisar que eu adapto o robô para ler esse .txt em tempo real.
