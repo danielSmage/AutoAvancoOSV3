@@ -7,6 +7,8 @@ class MotorInteligencia:
     def __init__(self, caminho_db, caminho_estoque99):
         print("[IA] Inicializando Motor de IA...")
         self.lojas_maiores = [1, 3, 4, 5, 6, 7, 8, 9, 11, 14, 15, 16, 17, 20, 22]
+        # Lojas reais do ERP — exclui registros auxiliares (70, 72, 73...)
+        self.lojas_validas = list(range(1, 28))  # 1 a 27 (sem 26 que não existe)
         
         # 1. LENDO O ESTOQUE99
         print("[ARQUIVO] Lendo o estoque atual...")
@@ -92,7 +94,9 @@ class MotorInteligencia:
         Modo 2 = Focar lojas zeradas (detectadas automaticamente via estoque99)
         """
         codigo_int = int(codigo)
-        df_item_completo = self.df_estoque[self.df_estoque['Codigo_Produto'] == codigo_int].sort_values(by='Loja')
+        df_raw = self.df_estoque[self.df_estoque['Codigo_Produto'] == codigo_int]
+        # Filtra apenas lojas reais (exclui registros auxiliares como 70, 72, 73)
+        df_item_completo = df_raw[df_raw['Loja'].astype(int).isin(self.lojas_validas)].sort_values(by='Loja')
 
         if df_item_completo.empty:
             return None, 0, "Item não encontrado no estoque99"
@@ -140,12 +144,16 @@ class MotorInteligencia:
             if media_hist > 0 and mdv_final > (media_hist * 3):
                 mdv_final = media_hist
 
+            ddv_val = pd.to_numeric(str(loja.get('DDV', 0)).replace(',', '.'), errors='coerce')
+            ddv_val = float(ddv_val) if pd.notna(ddv_val) else 0.0
+
             lojas_processar.append({
                 'loja': lj,
                 'tem_mix': (loja['Mix Loja'] == 'S'),
                 'estoque': loja['Estoque_Num'],
                 'mdv': mdv_final,
-                'perfil': 1 if lj in self.lojas_maiores else 0
+                'perfil': 1 if lj in self.lojas_maiores else 0,
+                'ddv': ddv_val
             })
             distribuicao[lj] = {'qtd': 0, 'motivo': 'Pendente'}
 
@@ -167,47 +175,61 @@ class MotorInteligencia:
                 caixas_disp -= 1
 
         # ==========================================
-        # ONDA 2: DISTRIBUIÇÃO INTELIGENTE (IA/Giro)
+        # ONDA 2: DISTRIBUIÇÃO POR MDV
+        # Cobertura alvo: 30 dias (lojas maiores) / 15 dias (lojas menores)
+        # Racionamento por DDV crescente quando CD é insuficiente
         # ==========================================
+        COBERTURA_GRANDE = 30
+        COBERTURA_PEQUENA = 15
+
         if caixas_disp > 0:
+            # Passo 1: calcula necessidade de cada loja
+            necessidades = []
             for info in lojas_processar:
                 lj = info['loja']
-                if not info['tem_mix'] or caixas_disp <= 0:
+                if not info['tem_mix']:
                     continue
-
-                # Modo Zerados: pula lojas que já foram marcadas como ignoradas
                 if modo == 2 and lojas_zeradas and lj not in lojas_zeradas:
                     continue
-                
-                if self.modelo_ia is not None:
-                    cenario = pd.DataFrame({
-                        'Estoque CD': [estoque_cd_un], 'Fator': [fator_produto],
-                        'Estoque Loja': [info['estoque']], 'MDV': [info['mdv']],
-                        'Norma': [45], 'Lastro': [9], 'Perfil_Loja': [info['perfil']],
-                        'Giro_Historico': [media_hist]
+
+                cobertura = COBERTURA_GRANDE if info['perfil'] == 1 else COBERTURA_PEQUENA
+                mdv = info['mdv']
+
+                if mdv <= 0:
+                    # Sem MDV e com estoque → não envia (se zerado já foi tratado na Onda 1)
+                    continue
+
+                necessidade_un = (mdv * cobertura) - info['estoque']
+                necessidade_cx = math.ceil(necessidade_un / fator_produto) if necessidade_un > 0 else 0
+                ja_tem = distribuicao[lj]['qtd']  # alocado na Onda 1
+                extra_cx = max(0, necessidade_cx - ja_tem)
+
+                if extra_cx > 0:
+                    necessidades.append({
+                        'loja': lj,
+                        'extra_cx': extra_cx,
+                        'ddv': info['ddv'],
+                        'cobertura': cobertura
                     })
-                    previsao = self.modelo_ia.predict(cenario)[0]
-                    sugestao = math.ceil(previsao)
-                    motivo_base = "Inteligência Claude/RF"
-                else:
-                    necessidade = (info['mdv'] * 30) - info['estoque']
-                    sugestao = math.ceil(necessidade / fator_produto) if necessidade > 0 else 0
-                    motivo_base = "Cálculo Giro (Fallback)"
 
-                sugestao_extra = max(0, sugestao - distribuicao[lj]['qtd'])
-                
-                if sugestao_extra > 0:
-                    limite_loja = 45 if info['perfil'] == 1 else 22
-                    if (distribuicao[lj]['qtd'] + sugestao_extra) > limite_loja:
-                        sugestao_extra = limite_loja - distribuicao[lj]['qtd']
+            # Passo 2: racionamento — ordena por DDV crescente (ruptura iminente primeiro)
+            necessidades.sort(key=lambda x: x['ddv'])
 
-                    if sugestao_extra > caixas_disp:
-                        sugestao_extra = caixas_disp
-                    
-                    valor_final_onda = max(0, int(sugestao_extra))
-                    distribuicao[lj]['qtd'] += valor_final_onda
-                    distribuicao[lj]['motivo'] = motivo_base if distribuicao[lj]['motivo'] == 'Pendente' else "Urgência + IA"
-                    caixas_disp -= valor_final_onda
+            for n in necessidades:
+                lj = n['loja']
+                if caixas_disp <= 0:
+                    if distribuicao[lj]['motivo'] == 'Pendente':
+                        distribuicao[lj]['motivo'] = "CD Insuficiente"
+                    continue
+                enviar = min(n['extra_cx'], caixas_disp)
+                motivo_onda2 = f"Giro MDV ({n['cobertura']}d)"
+                distribuicao[lj]['qtd'] += enviar
+                distribuicao[lj]['motivo'] = (
+                    "Urgência + Giro MDV"
+                    if distribuicao[lj]['motivo'] != 'Pendente'
+                    else motivo_onda2
+                )
+                caixas_disp -= enviar
 
         # --- VALIDAÇÃO FINAL DE SEGURANÇA ---
         for lj in distribuicao:
