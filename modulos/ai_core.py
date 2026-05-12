@@ -7,8 +7,8 @@ class MotorInteligencia:
     def __init__(self, caminho_db, caminho_estoque99):
         print("[IA] Inicializando Motor de IA...")
         self.lojas_maiores = [1, 3, 4, 5, 6, 7, 8, 9, 11, 14, 15, 16, 17, 20, 22]
-        # Lojas reais do ERP — exclui registros auxiliares (70, 72, 73...)
-        self.lojas_validas = list(range(1, 28))  # 1 a 27 (sem 26 que não existe)
+        # Lojas reais do ERP (1 a 29, exceto a 26 que não existe)
+        self.lojas_validas = [i for i in range(1, 30) if i != 26]
         
         # 1. LENDO O ESTOQUE99
         print("[ARQUIVO] Lendo o estoque atual...")
@@ -129,7 +129,7 @@ class MotorInteligencia:
                 print(f"[INFO] Item {codigo_int}: Nenhuma loja zerada encontrada. Usando distribuição padrão.")
                 modo = 1  # Cai para padrão se não há lojas zeradas
 
-        distribuicao = {}
+        distribuicao = {lj: {'qtd': 0, 'motivo': 'Não listado'} for lj in self.lojas_validas}
         caixas_disp = estoque_cd_cx
 
         # --- FILTRO DE SAZONALIDADE ---
@@ -155,7 +155,7 @@ class MotorInteligencia:
                 'perfil': 1 if lj in self.lojas_maiores else 0,
                 'ddv': ddv_val
             })
-            distribuicao[lj] = {'qtd': 0, 'motivo': 'Pendente'}
+            distribuicao[lj]['motivo'] = 'Pendente'
 
         # ==========================================
         # ONDA 1: PRIORIDADE ABSOLUTA (Anti-Ruptura)
