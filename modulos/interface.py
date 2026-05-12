@@ -229,10 +229,11 @@ class AppReposicao(ctk.CTk):
 
                 distribuicao, cd_total, status = self.motor.calcular_distribuicao(cod, modo=modo)
 
-                if distribuicao:
-                    self.robo.executar_item(cod, distribuicao, cd_total, status)
-                else:
-                    self._log(f"⚠️ Item {cod} ignorado: {status}")
+                # Sempre chama o robô para ele digitar o código na tela. 
+                # Se não houver distribuição (ex: estoque negativo), ele fará a tratativa de ESC e N.
+                if distribuicao is None:
+                    distribuicao = {}
+                self.robo.executar_item(cod, distribuicao, cd_total, status)
 
             self.robo.gerar_relatorio_csv()
             self._log("\n✅ PROCESSAMENTO FINALIZADO!")
