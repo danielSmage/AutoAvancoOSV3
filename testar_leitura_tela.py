@@ -26,8 +26,8 @@ def iniciar_teste():
     print("\n🔍 Analisando a tela ativa agora...")
     
     try:
-        # Pega a janela que está ativa no momento (focada)
-        janela_ativa = Desktop(backend="uia").windows(visible_only=True)[0]
+        # Pega a janela que está ativa no momento (focada) - usando o motor antigo win32
+        janela_ativa = Desktop(backend="win32").windows(visible_only=True)[0]
         titulo = janela_ativa.window_text()
         print(f"\n[OK] Janela encontrada: {titulo}")
         
