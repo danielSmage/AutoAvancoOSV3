@@ -10,6 +10,7 @@ import json
 from modulos.seguranca import AutenticadorFirebase
 from modulos.ai_core import MotorInteligencia
 from modulos.rpa_bot import RoboOperador
+from modulos.bot_telnet import BotTelnet
 
 # Configurações globais de aparência
 ctk.set_appearance_mode("dark")
@@ -68,9 +69,9 @@ class JanelaConfiguracoes(ctk.CTkToplevel):
         self.entry_porta.insert(0, cfg.get("porta", "23"))
 
         ctk.CTkLabel(frame, text="Tipo de Conexão:", anchor="w").grid(row=4, column=0, padx=10, pady=(0, 2), sticky="w")
-        self.opt_conexao = ctk.CTkOptionMenu(frame, values=["pyautogui (atual)", "Telnet (em breve)"])
+        self.opt_conexao = ctk.CTkOptionMenu(frame, values=["pyautogui", "telnet"])
         self.opt_conexao.grid(row=5, column=0, padx=10, pady=(0, 15), sticky="ew")
-        self.opt_conexao.set("pyautogui (atual)" if cfg.get("conexao") == "pyautogui" else "Telnet (em breve)")
+        self.opt_conexao.set(cfg.get("conexao", "pyautogui"))
 
         ctk.CTkButton(self, text="SALVAR", command=self._salvar).pack(pady=20, padx=20, fill="x")
 
@@ -78,9 +79,13 @@ class JanelaConfiguracoes(ctk.CTkToplevel):
         cfg = {
             "host": self.entry_host.get().strip(),
             "porta": self.entry_porta.get().strip() or "23",
-            "conexao": "pyautogui" if "pyautogui" in self.opt_conexao.get() else "telnet"
+            "conexao": self.opt_conexao.get()
         }
         salvar_config(cfg)
+        
+        # Atualiza a referência da janela principal para recarregar o robô
+        self.master.preparar_motores()
+        
         messagebox.showinfo("Configurações", "Salvo com sucesso!", parent=self)
         self.destroy()
 
@@ -184,9 +189,19 @@ class AppReposicao(ctk.CTk):
         path_db = os.path.join(BASE_DIR, 'dados', 'DB.txt')
         path_estoque = os.path.join(BASE_DIR, 'dados', 'estoque99.csv')
 
+        cfg = carregar_config()
+        modo_conexao = cfg.get("conexao", "pyautogui")
+        host = cfg.get("host", "192.168.70.250")
+        porta = int(cfg.get("porta", 23) or 23)
+
         try:
             self.motor = MotorInteligencia(path_db, path_estoque)
-            self.robo = RoboOperador(self.operador_logado, log_callback=self._log)
+            
+            if modo_conexao == "telnet":
+                self.robo = BotTelnet(self.operador_logado, host=host, port=porta, log_callback=self._log)
+            else:
+                self.robo = RoboOperador(self.operador_logado, log_callback=self._log)
+                
         except Exception as e:
             messagebox.showerror("Erro Fatal", f"Erro ao inicializar sistemas:\n{str(e)}")
             sys.exit()
