@@ -108,7 +108,33 @@ class RoboOperador(BaseOperador):
                 self._log(f"   Loja {loja_id}: 0 cx → {dados.get('motivo', 'Ignorada')}")
 
             time.sleep(0.1)
-            pyautogui.press(['enter', 'enter'])
+            # 1º Enter (Sempre envia a quantidade digitada)
+            pyautogui.press('enter')
+            time.sleep(0.4) # Aguarda a tela reagir (mudar de linha ou piscar o aviso)
+            
+            # =========================================================
+            # CHECAGEM VISUAL DO AVISO VERMELHO (SUGESTAO ABC)
+            # =========================================================
+            # Use o arquivo 'calibrar_aviso.py' para descobrir as coordenadas X e Y do seu ERP
+            AVISO_X = 500  # COLOQUE AQUI O X DO CALIBRADOR
+            AVISO_Y = 500  # COLOQUE AQUI O Y DO CALIBRADOR
+            
+            try:
+                # Tira print de um pequeno retângulo (40x20) em volta da coordenada para tolerar pequenas tremidas da tela
+                bbox = pyautogui.screenshot(region=(AVISO_X - 20, AVISO_Y - 10, 40, 20))
+                achou_vermelho = False
+                for px in bbox.getdata():
+                    # Checa se o pixel é dominantemente vermelho (R alto, G e B baixos)
+                    if px[0] > 170 and px[1] < 70 and px[2] < 70:
+                        achou_vermelho = True
+                        break
+                
+                if achou_vermelho:
+                    self._log(f"   [!] Aviso vermelho detectado na Loja {loja_id}. Dando 2º Enter (Bypass)...")
+                    pyautogui.press('enter')
+                    time.sleep(0.3)
+            except Exception as e:
+                pass # Se der erro na leitura (ex: tela minimizada), segue a vida
             
             # Pulo de grade exato: como a lista reflete a tela, a 13ª iteração é a 13ª linha (fim da página)
             if index % 13 == 0:
