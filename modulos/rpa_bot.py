@@ -90,7 +90,7 @@ class RoboOperador(BaseOperador):
             })
             return
 
-        for loja_id, dados in distribuicao.items():
+        for index, (loja_id, dados) in enumerate(distribuicao.items(), start=1):
             qtd = int(dados['qtd'])
 
             # Trava anti-negativo no nível de hardware
@@ -102,7 +102,14 @@ class RoboOperador(BaseOperador):
 
             time.sleep(0.1)
             pyautogui.press(['enter', 'enter'])
-            time.sleep(0.6) # Dobro do tempo antigo (0.25 -> 0.6)
+            
+            # Pulo de grade: a cada 13 lojas a tela vira, demorando mais tempo
+            if index % 13 == 0:
+                self._log(f"   [!] Pulo de grade (página) na loja {loja_id}. Aguardando tela...")
+                time.sleep(2.0) # Tempo extra para o ERP carregar a nova página
+            else:
+                time.sleep(0.6) # Tempo normal (0.25 -> 0.6)
+
 
             self.relatorio.append({
                 'DataHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
