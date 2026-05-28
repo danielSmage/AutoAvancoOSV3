@@ -109,7 +109,14 @@ class RoboOperador(BaseOperador):
 
             time.sleep(0.1)
             pyautogui.press(['enter', 'enter'])
-            time.sleep(0.6) # Ritmo normal (a grade troca sozinha)
+            
+            # Pulo de grade exato: como a lista reflete a tela, a 13ª iteração é a 13ª linha (fim da página)
+            if index % 13 == 0:
+                self._log(f"   [!] Fim da página detectado (Loja {loja_id}). Aguardando ERP carregar próxima tela...")
+                time.sleep(1.0) # Dá tempo para o ERP começar a piscar
+                self.enxergar_sistema_pronto() # O robô só volta a digitar quando a tela 2 estabilizar 100%
+            else:
+                time.sleep(0.6) # Ritmo normal (a grade troca sozinha)
 
 
             self.relatorio.append({
