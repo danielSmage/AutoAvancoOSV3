@@ -72,9 +72,16 @@ class RoboOperador(BaseOperador):
         # Limpa o campo (segurança extra)
         pyautogui.press('backspace', presses=8)
 
-        pyautogui.write(str(codigo), interval=0.05)
-        pyautogui.press('enter')
-        time.sleep(4.0)  # Tempo MANTIDO e AUMENTADO para 4 segundos para garantir que o ERP carregou
+        codigo_str = str(codigo)
+        pyautogui.write(codigo_str, interval=0.05)
+        
+        if len(codigo_str) == 6:
+            self._log("[RPA] Código de 6 dígitos detectado (auto-submit). Aguardando 1s...")
+            time.sleep(1.0)
+        else:
+            self._log("[RPA] Código menor que 6 dígitos. Enviando Enter e aguardando 4s...")
+            pyautogui.press('enter')
+            time.sleep(4.0)
 
         if status_ia == "Estoque CD Zerado/Negativo" or cd_total <= 0:
             self._log(f"[AVISO] Item {codigo}: Sem estoque no CD. Cancelando operação...")
@@ -102,13 +109,7 @@ class RoboOperador(BaseOperador):
 
             time.sleep(0.1)
             pyautogui.press(['enter', 'enter'])
-            
-            # Pulo de grade: a cada 13 lojas a tela vira, demorando mais tempo
-            if index % 13 == 0:
-                self._log(f"   [!] Pulo de grade (página) na loja {loja_id}. Aguardando tela...")
-                time.sleep(2.0) # Tempo extra para o ERP carregar a nova página
-            else:
-                time.sleep(0.6) # Tempo normal (0.25 -> 0.6)
+            time.sleep(0.6) # Ritmo normal (a grade troca sozinha)
 
 
             self.relatorio.append({
