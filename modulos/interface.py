@@ -46,7 +46,7 @@ class JanelaConfiguracoes(ctk.CTkToplevel):
     def __init__(self, master):
         super().__init__(master)
         self.title("Configurações")
-        self.geometry("380x320")
+        self.geometry("380x400")
         self.resizable(False, False)
         self.grab_set()  # Bloqueia a janela principal enquanto estiver aberta
 
