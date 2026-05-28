@@ -185,19 +185,13 @@ class BotTelnet:
             self.esperar_prompt("F3:", 5)
             self.drenar_buffer(1.0)
 
-        self._log("⬇️  Acessando Adm. Materiais...")
-        self.sock.sendall(KEY_DOWN)
-        time.sleep(0.5)
-        self.sock.sendall(KEY_ENTER)
+        self._log("⬇️  Acessando Adm. Materiais (Menu 7)...")
+        self.sock.sendall(b"7")
+        self.ler_tela(1.0)
         
-        self.esperar_prompt("Filial", 5)
-        self.sock.sendall(b"70\r")
-
-        self._log("🛤️  Navegando nos menus P > U > I > S...")
-        self.esperar_prompt("ADMINISTRACAO", 5)
-        for tecla in [b"P", b"U", b"I", b"\r", b"S"]:
-            self.sock.sendall(tecla)
-            self.ler_tela(1.0)
+        self._log("🛤️  Acessando Distribuição (Menu 9)...")
+        self.sock.sendall(b"9")
+        self.ler_tela(1.0)
 
         self._log("📄 Aguardando tela PED990...")
         self.esperar_prompt("PED", 5)
