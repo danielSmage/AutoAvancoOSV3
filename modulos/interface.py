@@ -294,18 +294,19 @@ def abrir_tela_login():
 
         btn_login.configure(state="disabled", text="Verificando...")
 
-        sucesso, msg = auth.login_usuario(email, senha)
-        if sucesso:
-            sucesso_per, info_per = auth.verificar_usuario_ativo()
-            if sucesso_per:
-                login.destroy()
-                abrir_tela_principal(email.split('@')[0])
-            else:
-                messagebox.showerror("Acesso", info_per)
-                btn_login.configure(state="normal", text="ENTRAR")
-        else:
-            messagebox.showerror("Erro", msg)
-            btn_login.configure(state="normal", text="ENTRAR")
+        # --- BYPASS DE AUTENTICAÇÃO PARA TESTES ---
+        # sucesso, msg = auth.login_usuario(email, senha)
+        # se sucesso:
+        #     sucesso_per, info_per = auth.verificar_usuario_ativo()
+        #     se sucesso_per:
+        
+        # Pula direto para a tela principal
+        login.destroy()
+        abrir_tela_principal(email.split('@')[0])
+        
+        # else:
+        #     messagebox.showerror("Erro", msg)
+        #     btn_login.configure(state="normal", text="ENTRAR")
 
     login.bind('<Return>', executar_login)
 
