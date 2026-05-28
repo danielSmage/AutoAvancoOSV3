@@ -155,48 +155,62 @@ class BotTelnet:
         time.sleep(pausa)
 
     def conectar_e_navegar(self):
-        self._log("ðŸ“¡ Conectando ao servidor Telnet...")
+        self._log("?? Conectando ao servidor Telnet...")
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.connect((self.host, self.port))
         self.sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self.conectado = True
 
-        self._log("ðŸ”‘ Login Linux...")
-        self.esperar_prompt("login:", 5)
+        self._log("?? Console Inicial...")
+        self.sock.sendall(b"\r")
+        self.ler_tela(1.0)
+
+        self._log("?? Login Linux...")
+        self.esperar_prompt("login", 5)
         self.sock.sendall(b"danielos\r\n")
-        self.esperar_prompt("Password:", 5)
+        self.esperar_prompt("Password", 5)
         self.sock.sendall(b"sl123456\r\n")
 
-        self._log("ðŸ¢ Selecionando Lojas Super Luna (1)...")
-        self.ler_tela(3.0)
+        self._log("?? Selecionando Lojas Super Luna (1)...")
+        self.esperar_prompt("Filiais", 5)
         self.sock.sendall(b"1\r")
 
-        self._log("ðŸ” Login ERP AvanÃ§o...")
-        self.ler_tela(2.0)
+        self._log("?? Identificacao (Usuário e Senha do ERP)...")
+        self.esperar_prompt("Usuario", 5)
         self.sock.sendall(b"986\r")
-        self.ler_tela(1.0)
+        self.esperar_prompt("Senha", 5)
         self.sock.sendall(b"12344\r")
 
-        self._log("â³ Limpando erros de permissÃ£o...")
-        tela = self.limpar_ansi(self.esperar_prompt("ENTER", 8))
-        if "ROTINA NAO AUTORIZADA" in tela:
-            self.drenar_buffer(0.3)
+        self._log("? Verificando tela de avisos (LIDO)...")
+        tela = self.limpar_ansi(self.ler_tela(3.0))
+        if "LIDO" in tela.upper():
+            self._log("   [!] Tela de Histórico detectada, pressionando ESC.")
+            self.sock.sendall(b"\x1b") # ESC
+            self.ler_tela(1.0)
+            
+        if "ROTINA NAO AUTORIZADA" in tela.upper():
+            self._log("   [!] Erro de Rotina, limpando com Enter...")
             self.sock.sendall(b"\r")
-            self.esperar_prompt("F3:", 5)
-            self.drenar_buffer(1.0)
+            self.ler_tela(1.0)
 
-        self._log("â¬‡ï¸  Acessando Adm. Materiais (Menu 7)...")
-        self.sock.sendall(b"7")
-        self.ler_tela(1.0)
-        
-        self._log("ðŸ›¤ï¸  Acessando DistribuiÃ§Ã£o (Menu 9)...")
-        self.sock.sendall(b"9")
-        self.ler_tela(1.0)
+        self._log("??  Menu Principal -> Administração Materiais...")
+        # Usa M para descer para a segunda opção com segurança e acessa Filial 70
+        self.sock.sendall(b"m")
+        self.esperar_prompt("Filial", 5)
+        self.sock.sendall(b"70\r")
 
-        self._log("ðŸ“„ Aguardando tela PED990...")
-        self.esperar_prompt("PED", 5)
-        
-        self._log("âœ… Tela pronta para digitaÃ§Ã£o!")
+        self._log("???  Navegando nos submenus (P > U > I > S)...")
+        self.ler_tela(1.0)
+        for tecla in [b"P", b"U", b"I", b"S"]:
+            self.sock.sendall(tecla)
+            time.sleep(0.5)
+
+        self._log("?? Acessando tela PED994 (3x Enters)...")
+        for _ in range(3):
+            self.sock.sendall(b"\r")
+            time.sleep(0.4)
+            
+        self._log("? Tela pronta para digitação!")
 
     def executar_item(self, codigo, distribuicao, cd_total, status_ia, fator=24):
         self._log(f"\n[TELNET] Operando Item {codigo}...")
@@ -283,3 +297,4 @@ class BotTelnet:
         if self.sock:
             self.sock.close()
             self.conectado = False
+
