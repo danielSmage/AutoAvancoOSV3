@@ -89,11 +89,14 @@ class MotorInteligencia:
         """
         codigo_int = int(codigo)
         df_raw = self.df_estoque[self.df_estoque['Codigo_Produto'] == codigo_int]
-        # Filtra apenas lojas reais (exclui registros auxiliares como 70, 72, 73)
-        df_item_completo = df_raw[df_raw['Loja'].astype(int).isin(self.lojas_validas)].sort_values(by='Loja')
+        # Filtra apenas lojas válidas E que possuem MIX (o ERP não exibe lojas sem Mix)
+        df_item_completo = df_raw[
+            (df_raw['Loja'].astype(int).isin(self.lojas_validas)) & 
+            (df_raw['Mix Loja'] == 'S')
+        ].sort_values(by='Loja')
 
         if df_item_completo.empty:
-            return None, 0, "Item não encontrado no estoque99"
+            return None, 0, "Item não encontrado ou sem lojas com Mix no estoque99"
 
         # --- FATOR DINÂMICO ---
         # Tenta pegar o fator real do produto no estoque99
@@ -115,9 +118,7 @@ class MotorInteligencia:
 
         # --- MODO ZERADOS: detecta lojas zeradas automaticamente ---
         if modo == 2:
-            df_zeradas = df_item_completo[
-                (df_item_completo['Estoque_Num'] <= 0) & (df_item_completo['Mix Loja'] == 'S')
-            ]
+            df_zeradas = df_item_completo[df_item_completo['Estoque_Num'] <= 0]
             lojas_zeradas = df_zeradas['Loja'].astype(int).tolist()
             if not lojas_zeradas:
                 print(f"[INFO] Item {codigo_int}: Nenhuma loja zerada encontrada. Usando distribuição padrão.")
