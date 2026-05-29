@@ -41,29 +41,31 @@ class MotorInteligencia:
                             errors='coerce'
                         ).fillna(0)
                         
-                # OTIMIZAÇÃO CRÍTICA: O db.csv original do usuário não tem a curva de vendas (MDV).
-                # Isso deixava a IA "burra". Vamos fundir o histórico com o estoque99 atual para injetar o MDV!
+                # OTIMIZAÇÃO CRÍTICA: O db.csv original do usuário não tem a curva de vendas (MDV) nem o DDV.
+                # Isso deixava a IA "burra". Vamos fundir o histórico com o estoque99 atual para injetar o MDV e o DDV!
                 try:
-                    df_estoque_slim = self.df_estoque[['Loja', 'Codigo_Produto', 'Media_Num']].copy()
+                    df_estoque_slim = self.df_estoque[['Loja', 'Codigo_Produto', 'Media_Num', 'DDV']].copy()
                     df_estoque_slim['Loja'] = pd.to_numeric(df_estoque_slim['Loja'], errors='coerce').fillna(0)
                     df_estoque_slim['Codigo_Produto'] = pd.to_numeric(df_estoque_slim['Codigo_Produto'], errors='coerce').fillna(0)
                     
                     df_treino['Lj'] = pd.to_numeric(df_treino['Lj'], errors='coerce').fillna(0)
                     df_treino['Item'] = pd.to_numeric(df_treino['Item'], errors='coerce').fillna(0)
                     
-                    # Merge do histórico com a curva de vendas atual (Media_Num)
+                    # Merge do histórico com a curva de vendas atual (Media_Num) e DDV
                     df_treino = pd.merge(
                         df_treino, df_estoque_slim, 
                         left_on=['Lj', 'Item'], right_on=['Loja', 'Codigo_Produto'], 
                         how='left'
                     )
                     df_treino['Media_Num'] = df_treino['Media_Num'].fillna(0)
+                    df_treino['DDV'] = pd.to_numeric(df_treino['DDV'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
                 except Exception as merge_err:
-                    print(f"[AVISO IA] Falha ao fundir MDV no histórico: {merge_err}")
+                    print(f"[AVISO IA] Falha ao fundir MDV/DDV no histórico: {merge_err}")
                     df_treino['Media_Num'] = 0
+                    df_treino['DDV'] = 0
 
-                # Agora a IA aprende com o MDV (curva de vendas)!
-                features = ['Lj', 'Estoque', 'Fator', 'Media_Num']
+                # Agora a IA aprende com o MDV (curva de vendas) e o DDV (dias para ruptura)!
+                features = ['Lj', 'Estoque', 'Fator', 'Media_Num', 'DDV']
                 target = 'Quantidade'
 
                 # Pega apenas colunas que realmente existem
@@ -76,7 +78,7 @@ class MotorInteligencia:
                     # Motor de Random Forest 
                     self.modelo_ia = RandomForestRegressor(n_estimators=50, random_state=42)
                     self.modelo_ia.fit(X, y)
-                    print(f"[OK] Machine Learning Treinado com {len(df_treino)} registros. (Curva de Vendas acoplada!)")
+                    print(f"[OK] Machine Learning Treinado com {len(df_treino)} registros. (Curva de Vendas e DDV acoplados!)")
             except Exception as e:
                 print(f"[ERRO CRÍTICO IA] Falha severa no treinamento: {e}")
         else:
@@ -227,12 +229,13 @@ class MotorInteligencia:
             cx_alvo = cx_alvo_regra
             if self.modelo_ia is not None:
                 try:
-                    # O modelo aprendeu com: ['Lj', 'Estoque', 'Fator', 'Media_Num']
+                    # O modelo aprendeu com: ['Lj', 'Estoque', 'Fator', 'Media_Num', 'DDV']
                     df_pred = pd.DataFrame([{
                         'Lj': lj,
                         'Estoque': estoque,
                         'Fator': fator_produto,
-                        'Media_Num': mdv
+                        'Media_Num': mdv,
+                        'DDV': ddv
                     }])
                     # Preditando quantidade
                     predicao_cx = self.modelo_ia.predict(df_pred)[0]
