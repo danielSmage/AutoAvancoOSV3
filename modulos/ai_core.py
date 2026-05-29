@@ -14,12 +14,20 @@ class MotorInteligencia:
         self.lojas_validas = list(range(1, 30))
         self.lojas_bugadas_erp = [26, 28, 29]
         
-        # 1. LENDO O ESTOQUE99
-        print("[ARQUIVO] Lendo o estoque atual...")
+        # 1. LENDO O ESTOQUE99 (agora extraído para método próprio)
+        self.caminho_estoque99 = caminho_estoque99
+        self.recarregar_estoque()
+
+        # 2. TREINANDO O CLONE COMPORTAMENTAL E CALCULANDO MÉDIA HISTÓRICA
+        self.modelo_ia = None
+        
+    def recarregar_estoque(self):
+        """Lê o arquivo de estoque do disco dinamicamente para garantir dados atualizados."""
+        print("[ARQUIVO] Lendo o estoque atualizado...")
         try:
-            self.df_estoque = pd.read_csv(caminho_estoque99, sep=';', encoding='latin1', low_memory=False)
+            self.df_estoque = pd.read_csv(self.caminho_estoque99, sep=';', encoding='latin1', low_memory=False)
         except Exception:
-            self.df_estoque = pd.read_csv(caminho_estoque99, sep=';', encoding='utf-8', low_memory=False)
+            self.df_estoque = pd.read_csv(self.caminho_estoque99, sep=';', encoding='utf-8', low_memory=False)
             
         # Padroniza o nome da coluna de código
         colunas_codigo = [col for col in self.df_estoque.columns if 'digo' in col]
@@ -38,9 +46,6 @@ class MotorInteligencia:
             ).fillna(24)
         else:
             self.df_estoque['Fator_Num'] = 24
-
-        # 2. TREINANDO O CLONE COMPORTAMENTAL E CALCULANDO MÉDIA HISTÓRICA
-        self.modelo_ia = None
         self.media_historica_item = {} # Dicionário {codigo: media_mdv}
         
         caminho_datasimul = os.path.join(os.path.dirname(caminho_db), 'datasimul.csv')

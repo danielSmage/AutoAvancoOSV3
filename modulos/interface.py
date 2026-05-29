@@ -224,6 +224,9 @@ class AppReposicao(ctk.CTk):
 
     def processar_automacao(self, codigos_texto):
         try:
+            # Recarrega o estoque dinamicamente do arquivo para garantir dados frescos
+            self.motor.recarregar_estoque()
+            
             self.robo.contador_sessao = 0  # Reset para ignorar setinhas no 1º item
             codigos = [int(x.strip()) for x in codigos_texto.split() if x.strip().isdigit()]
             modo = self.modo_var.get()
