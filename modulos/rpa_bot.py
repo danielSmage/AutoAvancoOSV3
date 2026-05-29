@@ -161,10 +161,9 @@ class RoboOperador(BaseOperador):
                         'Quantidade': qtd,
                         'Estoque CD': cd_total * fator,  # Volta para unidades
                         'Fator': fator,
-                        'Estoque Loja': 0,  # Não temos esse dado no momento da operação
-                        'MDV': 0,           # Idem
-                        'Norma': 45,
-                        'Lastro': 9
+                        'Estoque Loja': dados.get('estoque', 0),
+                        'MDV': dados.get('mdv', 0),
+                        'DDV': dados.get('ddv', 0)
                     }
                     linhas.append(linha)
 

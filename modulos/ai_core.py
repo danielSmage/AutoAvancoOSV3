@@ -149,7 +149,7 @@ class MotorInteligencia:
         # Pega EXATAMENTE as lojas que existem no estoque99 para este produto (espelho da tela do ERP)
         lojas_validas_produto = sorted(df_item_completo['Loja'].astype(int).unique().tolist())
         
-        distribuicao = {lj: {'qtd': 0, 'motivo': 'Não listado'} for lj in lojas_validas_produto}
+        distribuicao = {lj: {'qtd': 0, 'motivo': 'Não listado', 'mdv': 0, 'ddv': 0, 'estoque': 0} for lj in lojas_validas_produto}
         caixas_disp = estoque_cd_cx
 
         # --- FILTRO DE SAZONALIDADE ---
@@ -166,16 +166,21 @@ class MotorInteligencia:
 
             ddv_val = pd.to_numeric(str(loja.get('DDV', 0)).replace(',', '.'), errors='coerce')
             ddv_val = float(ddv_val) if pd.notna(ddv_val) else 0.0
+            
+            estoque_loja = loja['Estoque_Num']
 
             lojas_processar.append({
                 'loja': lj,
                 'tem_mix': (loja['Mix Loja'] == 'S'),
-                'estoque': loja['Estoque_Num'],
+                'estoque': estoque_loja,
                 'mdv': mdv_final,
                 'perfil': 1 if lj in self.lojas_maiores else 0,
                 'ddv': ddv_val
             })
             distribuicao[lj]['motivo'] = 'Pendente'
+            distribuicao[lj]['mdv'] = mdv_final
+            distribuicao[lj]['ddv'] = ddv_val
+            distribuicao[lj]['estoque'] = estoque_loja
 
         # ==========================================
         # DEFINIÇÃO DOS LIMITES E CÁLCULO BASEADO NO MÊS (30 DIAS) E DDV
@@ -198,25 +203,43 @@ class MotorInteligencia:
             if mdv <= 0 and estoque > 0:
                 continue
 
-            # 1. Alvo Mensal/Quinzenal
-            # Lojas grandes recebem alvo de 30 dias. Lojas pequenas alvo de 15 dias (metade do mês).
+            # 1. Alvo Mensal/Quinzenal Padrão
+            # Lojas grandes recebem alvo de 30 dias. Lojas pequenas alvo de 15 dias.
             if mdv > 0:
                 dias_alvo = 30 if info['perfil'] == 1 else 15
                 nec_alvo_un = (mdv * dias_alvo) - estoque
-                cx_alvo = math.ceil(nec_alvo_un / fator_produto) if nec_alvo_un > 0 else 0
+                cx_alvo_regra = math.ceil(nec_alvo_un / fator_produto) if nec_alvo_un > 0 else 0
             else:
-                # Se não tem MDV, mas está zerada, o alvo é 1 caixa pra teste de demanda
-                cx_alvo = 1 if estoque <= 0 else 0
+                cx_alvo_regra = 1 if estoque <= 0 else 0
 
-            # 2. Mínimo de Segurança (Urgência baseada em DDV e Estoque Zerado)
-            # Lojas com menos de 7 dias de cobertura (DDV < 7) ou zeradas têm prioridade na Onda 1
+            # 2. IA APRENDIZADO
+            # Se tivermos o modelo treinado pelo DB.txt, ele tem a palavra final sobre o alvo!
+            cx_alvo = cx_alvo_regra
+            if self.modelo_ia is not None:
+                try:
+                    # O modelo aprendeu com: ['Lj', 'Estoque Loja', 'MDV', 'DDV', 'Fator']
+                    df_pred = pd.DataFrame([{
+                        'Lj': lj,
+                        'Estoque Loja': estoque,
+                        'MDV': mdv,
+                        'DDV': ddv,
+                        'Fator': fator_produto
+                    }])
+                    # Preditando quantidade de unidades (porque treinamos a IA com unidades se usamos datasimul, ou caixas se usamos db.txt, vamos garantir a consistência no __init__)
+                    predicao_cx = self.modelo_ia.predict(df_pred)[0]
+                    cx_alvo_ia = max(0, round(predicao_cx))
+                    
+                    # A IA substitui a regra cega se tiver sugestão, mas nunca passa de um limite extremo
+                    cx_alvo = cx_alvo_ia
+                except Exception as e:
+                    pass
+
+            # 3. Mínimo de Segurança (Onda 1)
             cx_min = 0
             if estoque <= 0:
-                # Se tá zerado, precisa de no mínimo 1 caixa, ou 10 dias de cobertura, o que for maior
                 nec_urgente = (mdv * 10) - estoque if mdv > 0 else 0
                 cx_min = max(1, math.ceil(nec_urgente / fator_produto))
             elif ddv <= 7 and mdv > 0:
-                # Se tá quase zerando (DDV crítico), garante pelo menos 10 dias na Onda 1
                 nec_urgente = (mdv * 10) - estoque
                 cx_min = max(0, math.ceil(nec_urgente / fator_produto))
 
@@ -232,13 +255,11 @@ class MotorInteligencia:
                     'estoque': estoque
                 })
 
-        # Racionamento: Sempre prioriza lojas zeradas primeiro (estoque <= 0), 
-        # depois desempata pelas que têm o menor DDV (maior risco de ruptura)
+        # Racionamento: Prioriza zeradas e menor DDV
         necessidades.sort(key=lambda x: (x['estoque'] > 0, x['ddv']))
 
         # ==========================================
         # ONDA 1: GARANTIR O MÍNIMO DE SEGURANÇA
-        # Se o CD tem pouco estoque, tenta dar o mínimo pra cada um antes de encher uma loja só.
         # ==========================================
         for n in necessidades:
             lj = n['loja']
@@ -246,7 +267,7 @@ class MotorInteligencia:
             if enviar_min > 0 and caixas_disp > 0:
                 enviar = min(enviar_min, caixas_disp)
                 distribuicao[lj]['qtd'] += enviar
-                distribuicao[lj]['motivo'] = "Mínimo Garantido"
+                distribuicao[lj]['motivo'] = "Mín. Segurança"
                 caixas_disp -= enviar
 
         # ==========================================
