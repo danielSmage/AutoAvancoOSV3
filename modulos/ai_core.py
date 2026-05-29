@@ -107,8 +107,22 @@ class MotorInteligencia:
         self.df_estoque['Media_Num'] = pd.to_numeric(self.df_estoque['Media'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
         self.df_estoque['Estoque_Num'] = pd.to_numeric(self.df_estoque['Estoque'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
 
-        # O Fator real será buscado no histórico (db.csv) durante o cálculo, 
-        # pois o estoque99 nativo não possui a embalagem do produto.
+        # Carrega o banco de dados mestre de embalagens (dados.xlsx) se existir
+        self.fatores_mestre = {}
+        caminho_dados_xlsx = os.path.join(os.path.dirname(self.caminho_estoque99), 'dados.xlsx')
+        if os.path.exists(caminho_dados_xlsx):
+            try:
+                df_mestre = pd.read_excel(caminho_dados_xlsx)
+                if 'Produto' in df_mestre.columns and 'Fator' in df_mestre.columns:
+                    # Limpa NaNs
+                    df_mestre_clean = df_mestre.dropna(subset=['Produto', 'Fator'])
+                    self.fatores_mestre = dict(zip(
+                        pd.to_numeric(df_mestre_clean['Produto'], errors='coerce').fillna(0).astype(int),
+                        pd.to_numeric(df_mestre_clean['Fator'], errors='coerce').fillna(12).astype(int)
+                    ))
+                    print(f"[OK] Banco Mestre de Embalagens (dados.xlsx) carregado com {len(self.fatores_mestre)} produtos!")
+            except Exception as e:
+                print(f"[AVISO] Não foi possível ler o Fator do dados.xlsx: {e}")
 
 
     def calcular_distribuicao(self, codigo, modo=1, lojas_zeradas=None):
@@ -131,9 +145,12 @@ class MotorInteligencia:
         if df_item_completo.empty:
             return None, 0, "Item não encontrado ou sem lojas com Mix no estoque99"
 
-        # --- FATOR DINÂMICO ---
-        # Como o estoque99 não possui a coluna de embalagem real, buscamos do histórico
-        fator_produto = self.fatores_historicos.get(codigo_int, 12) # Fallback seguro pra não esmagar a matemática
+        # --- FATOR DINÂMICO (PRIORIDADE MASTER) ---
+        # 1º Tenta do dados.xlsx (Mestre), 2º Tenta do db.csv (Histórico), 3º Fallback Seguro
+        fator_produto = self.fatores_mestre.get(codigo_int)
+        if not fator_produto or fator_produto <= 0:
+            fator_produto = self.fatores_historicos.get(codigo_int, 12)
+            
         if fator_produto <= 0:
             fator_produto = 12
 
