@@ -104,6 +104,7 @@ class MotorInteligencia:
         if colunas_codigo:
             self.df_estoque.rename(columns={colunas_codigo[0]: 'Codigo_Produto'}, inplace=True)
             
+        print("Colunas do dataframe:", self.df_estoque.columns.tolist())
         self.df_estoque['Media_Num'] = pd.to_numeric(self.df_estoque['Media'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
         self.df_estoque['Estoque_Num'] = pd.to_numeric(self.df_estoque['Estoque'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
 
@@ -203,37 +204,45 @@ class MotorInteligencia:
             distribuicao[lj]['estoque'] = estoque_loja
 
         # ==========================================
-        # DEFINIÇÃO DOS LIMITES E CÁLCULO BASEADO NO MÊS (30 DIAS) E DDV
+        # 0. PRÉ-CÁLCULO DE NECESSIDADE GLOBAL (TRAVA DE SALDO / STOCK CONFIDENCE)
+        # ==========================================
+        total_necessidade_matematica = 0
+        for info in lojas_processar:
+            if not info['tem_mix'] or (modo == 2 and info['estoque'] > 0):
+                continue
+            if info['mdv'] <= 0 and info['estoque'] > 0:
+                continue
+
+            if info['mdv'] > 0:
+                dias_alvo = 30 if info['perfil'] == 1 else 15
+                nec_alvo_un = (info['mdv'] * dias_alvo) - info['estoque']
+                cx_alvo_regra = math.ceil(nec_alvo_un / fator_produto) if nec_alvo_un > 0 else 0
+            else:
+                cx_alvo_regra = 1 if info['estoque'] <= 0 else 0
+                
+            info['cx_alvo_regra'] = cx_alvo_regra
+            total_necessidade_matematica += cx_alvo_regra
+
+        tem_escassez = (caixas_disp < total_necessidade_matematica)
+
+        # ==========================================
+        # DEFINIÇÃO DOS LIMITES E CÁLCULO FINAL
         # ==========================================
         necessidades = []
         for info in lojas_processar:
             lj = info['loja']
-            if not info['tem_mix']:
+            if 'cx_alvo_regra' not in info:
                 continue
                 
-            # No modo 2 (Zerados), só processamos lojas com estoque real <= 0
-            if modo == 2 and info['estoque'] > 0:
-                continue
-
+            cx_alvo_regra = info['cx_alvo_regra']
+            cx_alvo = cx_alvo_regra
             mdv = info['mdv']
             estoque = info['estoque']
             ddv = info['ddv']
 
-            # Se a loja não tem venda e ainda tem estoque, ignora
-            if mdv <= 0 and estoque > 0:
-                continue
-
-            # 1. Alvo Mensal/Quinzenal Padrão
-            if mdv > 0:
-                dias_alvo = 30 if info['perfil'] == 1 else 15
-                nec_alvo_un = (mdv * dias_alvo) - estoque
-                cx_alvo_regra = math.ceil(nec_alvo_un / fator_produto) if nec_alvo_un > 0 else 0
-            else:
-                cx_alvo_regra = 1 if estoque <= 0 else 0
-
-            # 2. IA APRENDIZADO
-            cx_alvo = cx_alvo_regra
-            if self.modelo_ia is not None:
+            # 2. IA APRENDIZADO (Trava de Escassez)
+            # A IA só aplica seus "cortes comportamentais" se não houver saldo no CD para bancar o DDS.
+            if tem_escassez and self.modelo_ia is not None:
                 try:
                     df_pred = pd.DataFrame([{
                         'Lj': lj,
@@ -244,7 +253,9 @@ class MotorInteligencia:
                     }])
                     predicao_cx = self.modelo_ia.predict(df_pred)[0]
                     cx_alvo_ia = max(0, round(predicao_cx))
-                    cx_alvo = cx_alvo_ia
+                    
+                    # O corte da IA age como um moderador inteligente, nunca excedendo o teto matemático
+                    cx_alvo = min(cx_alvo_regra, cx_alvo_ia)
                 except Exception as e:
                     print(f"[ERRO IA] Falha ao prever alvo para Loja {lj}: {e}")
                     pass
