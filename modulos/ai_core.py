@@ -20,6 +20,7 @@ class MotorInteligencia:
 
         # 2. TREINANDO O CLONE COMPORTAMENTAL
         self.modelo_ia = None
+        self.media_historica_item = {}
         
         # Como o usuário consolidou tudo no db.csv, lemos diretamente dele
         if os.path.exists(caminho_db):
