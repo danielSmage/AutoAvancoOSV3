@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # modulos/bot_telnet.py
 import socket
 import time
