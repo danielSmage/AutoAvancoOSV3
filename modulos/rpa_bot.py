@@ -115,10 +115,12 @@ class RoboOperador(BaseOperador):
                 pyautogui.write('a')
                 time.sleep(0.2)
                 
-                # b. Digita a quantidade e dá dois enters
+                # b. Digita a quantidade, um enter e cinco letras 's'
                 pyautogui.write(str(qtd), interval=0.05)
-                pyautogui.press(['enter', 'enter'])
-                time.sleep(0.5)
+                pyautogui.press('enter')
+                time.sleep(0.3)
+                pyautogui.write('sssss', interval=0.05)
+                time.sleep(0.4)
 
                 self.relatorio.append({
                     'DataHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
