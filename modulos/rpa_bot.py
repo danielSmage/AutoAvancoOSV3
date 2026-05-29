@@ -111,6 +111,10 @@ class RoboOperador(BaseOperador):
                 
                 time.sleep(0.3)
                 
+                # Responde à pergunta "prossegue para alterar?"
+                pyautogui.write('a')
+                time.sleep(0.2)
+                
                 # b. Digita a quantidade e dá dois enters
                 pyautogui.write(str(qtd), interval=0.05)
                 pyautogui.press(['enter', 'enter'])
