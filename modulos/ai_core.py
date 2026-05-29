@@ -18,43 +18,29 @@ class MotorInteligencia:
         self.caminho_estoque99 = caminho_estoque99
         self.recarregar_estoque()
 
-        # 2. TREINANDO O CLONE COMPORTAMENTAL E CALCULANDO MÉDIA HISTÓRICA
+        # 2. TREINANDO O CLONE COMPORTAMENTAL
         self.modelo_ia = None
-        self.media_historica_item = {} # Dicionário {codigo: media_mdv}
         
-        caminho_datasimul = os.path.join(os.path.dirname(caminho_db), 'datasimul.csv')
-        if os.path.exists(caminho_datasimul):
-            print("[IA] Lendo datasimul.csv para treinamento do Machine Learning...")
+        # Como o usuário consolidou tudo no db.csv, lemos diretamente dele
+        if os.path.exists(caminho_db):
+            print(f"[IA] Lendo {os.path.basename(caminho_db)} para treinamento do Machine Learning...")
             try:
-                df_treino = pd.read_csv(caminho_datasimul, sep=';', encoding='latin1', low_memory=False)
+                # O arquivo do usuário é separado por ;
+                df_treino = pd.read_csv(caminho_db, sep=';', encoding='latin1', low_memory=False)
+                
+                # Garante os nomes corretos
+                if 'Quantidade Digitada' in df_treino.columns:
+                    df_treino['Quantidade'] = df_treino['Quantidade Digitada']
                 
                 # Limpa e converte as colunas numéricas importantes
-                # Col 6: Quantidade (Target), Col 7: Estoque, Col 9: Fator
                 for col in ['Quantidade', 'Estoque', 'Fator']:
                     if col in df_treino.columns:
                         df_treino[col] = pd.to_numeric(
                             df_treino[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
                             errors='coerce'
                         ).fillna(0)
-                        
-                # Adicionando tratamento para o DB.txt (Machine Learning Local)
-                if os.path.exists(caminho_db):
-                    print("[IA] Incorporando histórico local (DB.txt) ao treinamento...")
-                    df_local = pd.read_csv(caminho_db, sep='\t')
-                    # Garante que as colunas essenciais existem antes de concatenar
-                    for col in ['Quantidade', 'Estoque CD', 'Fator', 'Item', 'Lj']:
-                        if col not in df_local.columns:
-                            df_local[col] = 0
-                            
-                    # Mapeia colunas do DB.txt para o formato do datasimul.csv (se necessário)
-                    # O modelo usa: ['Lj', 'Estoque', 'Fator', 'Norma', 'Lastro']
-                    # Como o datasimul e DB.txt têm estruturas parecidas, ajustamos o essencial
-                    if 'Estoque Loja' in df_local.columns:
-                        df_local['Estoque'] = df_local['Estoque Loja']
-                    
-                    df_treino = pd.concat([df_treino, df_local], ignore_index=True)
 
-                features = ['Lj', 'Estoque', 'Fator', 'Norma', 'Lastro']
+                features = ['Lj', 'Estoque', 'Fator']
                 target = 'Quantidade'
 
                 # Pega apenas colunas que realmente existem
@@ -67,11 +53,12 @@ class MotorInteligencia:
                     # Motor de Random Forest (árvore de decisão avançada)
                     self.modelo_ia = RandomForestRegressor(n_estimators=50, random_state=42)
                     self.modelo_ia.fit(X, y)
-                    print(f"[OK] Machine Learning Treinado com {len(df_treino)} registros do datasimul.csv!")
+                    print(f"[OK] Machine Learning Treinado com {len(df_treino)} registros do db.csv!")
             except Exception as e:
-                print(f"[AVISO] Erro ao treinar IA com datasimul.csv: {e}")
+                print(f"[AVISO] Erro ao treinar IA com db.csv: {e}")
         else:
-            print("[AVISO] Arquivo datasimul.csv não encontrado. Sem base histórica de digitação.")
+            print("[AVISO] Arquivo db.csv não encontrado. Sem base histórica de digitação.")
+
 
     def recarregar_estoque(self):
         """Lê o arquivo de estoque do disco dinamicamente para garantir dados atualizados."""

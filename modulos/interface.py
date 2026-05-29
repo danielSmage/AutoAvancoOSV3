@@ -186,7 +186,7 @@ class AppReposicao(ctk.CTk):
         JanelaConfiguracoes(self)
 
     def preparar_motores(self):
-        path_db = os.path.join(BASE_DIR, 'dados', 'DB.txt')
+        path_db = os.path.join(BASE_DIR, 'dados', 'db.csv')
         path_estoque = os.path.join(BASE_DIR, 'dados', 'estoque99.csv')
 
         cfg = carregar_config()

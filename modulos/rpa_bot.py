@@ -142,12 +142,11 @@ class RoboOperador(BaseOperador):
 
     def _registrar_no_db(self, codigo, distribuicao, cd_total, fator):
         """
-        Salva cada distribuição no DB.txt para treinar a IA na próxima sessão.
-        Formato compatível com o que o ai_core.py já lê.
+        Salva cada distribuição no db.csv para treinar a IA continuamente.
         """
         try:
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            caminho_db = os.path.join(base_dir, 'dados', 'DB.txt')
+            caminho_db = os.path.join(base_dir, 'dados', 'db.csv')
             data_hoje = datetime.now().strftime("%d/%m/%Y")
 
             linhas = []
@@ -158,25 +157,26 @@ class RoboOperador(BaseOperador):
                         'Lj': loja_id,
                         'Data': data_hoje,
                         'Item': codigo,
-                        'Quantidade': qtd,
-                        'Estoque CD': cd_total * fator,  # Volta para unidades
+                        'Descricao': '',
+                        'Quantidade Digitada': qtd,
+                        'Estoque': dados.get('estoque', 0),
+                        'UN': '',
                         'Fator': fator,
-                        'Estoque Loja': dados.get('estoque', 0),
-                        'MDV': dados.get('mdv', 0),
-                        'DDV': dados.get('ddv', 0)
+                        'Peso': '',
+                        'Comp': '',
+                        'N.Comp': ''
                     }
                     linhas.append(linha)
 
             if linhas:
                 df_novo = pd.DataFrame(linhas)
-                # Adiciona ao arquivo existente (ou cria se não existir)
                 if os.path.exists(caminho_db):
-                    df_novo.to_csv(caminho_db, mode='a', sep='\t', index=False, header=False)
+                    df_novo.to_csv(caminho_db, mode='a', sep=';', index=False, header=False, encoding='latin1')
                 else:
-                    df_novo.to_csv(caminho_db, mode='w', sep='\t', index=False, header=True)
-                self._log(f"[DB] DB.txt atualizado com {len(linhas)} linha(s) do item {codigo}.")
+                    df_novo.to_csv(caminho_db, mode='w', sep=';', index=False, header=True, encoding='latin1')
+                self._log(f"[DB] db.csv atualizado com {len(linhas)} linha(s) do item {codigo}.")
         except Exception as e:
-            self._log(f"[AVISO] Erro ao salvar no DB.txt: {e}")
+            self._log(f"[AVISO] Erro ao salvar no db.csv: {e}")
 
     def gerar_relatorio_csv(self):
         if not self.relatorio:
