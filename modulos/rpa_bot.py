@@ -103,24 +103,24 @@ class RoboOperador(BaseOperador):
                 
                 # a. Digita a loja
                 loja_str = str(loja_id)
-                pyautogui.write(loja_str, interval=0.05)
+                pyautogui.write(loja_str, interval=0.01)
                 
                 # Se for loja de 1 dígito (ex: 1 a 9), precisa de Enter
                 if len(loja_str) < 2:
                     pyautogui.press('enter')
                 
-                time.sleep(0.3)
+                time.sleep(0.1)
                 
                 # Responde à pergunta "prossegue para alterar?"
                 pyautogui.write('a')
-                time.sleep(0.2)
+                time.sleep(0.05)
                 
                 # b. Digita a quantidade, um enter e cinco letras 's'
-                pyautogui.write(str(qtd), interval=0.05)
+                pyautogui.write(str(qtd), interval=0.01)
                 pyautogui.press('enter')
-                time.sleep(0.3)
-                pyautogui.write('sssss', interval=0.05)
-                time.sleep(0.4)
+                time.sleep(0.1)
+                pyautogui.write('sssss', interval=0.01)
+                time.sleep(0.1)
 
                 self.relatorio.append({
                     'DataHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -130,10 +130,10 @@ class RoboOperador(BaseOperador):
                 })
 
         # 3. Finaliza o código com seta para cima
-        time.sleep(1.0)
+        time.sleep(0.3)
         self._log(f"[OK] Item {codigo} finalizado. Seta para Cima para o próximo...")
         pyautogui.press('up')
-        time.sleep(1.0)
+        time.sleep(0.3)
 
         self.contador_sessao += 1
 
