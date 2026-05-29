@@ -20,7 +20,59 @@ class MotorInteligencia:
 
         # 2. TREINANDO O CLONE COMPORTAMENTAL E CALCULANDO MÉDIA HISTÓRICA
         self.modelo_ia = None
+        self.media_historica_item = {} # Dicionário {codigo: media_mdv}
         
+        caminho_datasimul = os.path.join(os.path.dirname(caminho_db), 'datasimul.csv')
+        if os.path.exists(caminho_datasimul):
+            print("[IA] Lendo datasimul.csv para treinamento do Machine Learning...")
+            try:
+                df_treino = pd.read_csv(caminho_datasimul, sep=';', encoding='latin1', low_memory=False)
+                
+                # Limpa e converte as colunas numéricas importantes
+                # Col 6: Quantidade (Target), Col 7: Estoque, Col 9: Fator
+                for col in ['Quantidade', 'Estoque', 'Fator']:
+                    if col in df_treino.columns:
+                        df_treino[col] = pd.to_numeric(
+                            df_treino[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
+                            errors='coerce'
+                        ).fillna(0)
+                        
+                # Adicionando tratamento para o DB.txt (Machine Learning Local)
+                if os.path.exists(caminho_db):
+                    print("[IA] Incorporando histórico local (DB.txt) ao treinamento...")
+                    df_local = pd.read_csv(caminho_db, sep='\t')
+                    # Garante que as colunas essenciais existem antes de concatenar
+                    for col in ['Quantidade', 'Estoque CD', 'Fator', 'Item', 'Lj']:
+                        if col not in df_local.columns:
+                            df_local[col] = 0
+                            
+                    # Mapeia colunas do DB.txt para o formato do datasimul.csv (se necessário)
+                    # O modelo usa: ['Lj', 'Estoque', 'Fator', 'Norma', 'Lastro']
+                    # Como o datasimul e DB.txt têm estruturas parecidas, ajustamos o essencial
+                    if 'Estoque Loja' in df_local.columns:
+                        df_local['Estoque'] = df_local['Estoque Loja']
+                    
+                    df_treino = pd.concat([df_treino, df_local], ignore_index=True)
+
+                features = ['Lj', 'Estoque', 'Fator', 'Norma', 'Lastro']
+                target = 'Quantidade'
+
+                # Pega apenas colunas que realmente existem
+                features_validas = [f for f in features if f in df_treino.columns]
+                
+                if features_validas and target in df_treino.columns:
+                    X = df_treino[features_validas].fillna(0)
+                    y = df_treino[target]
+                    
+                    # Motor de Random Forest (árvore de decisão avançada)
+                    self.modelo_ia = RandomForestRegressor(n_estimators=50, random_state=42)
+                    self.modelo_ia.fit(X, y)
+                    print(f"[OK] Machine Learning Treinado com {len(df_treino)} registros do datasimul.csv!")
+            except Exception as e:
+                print(f"[AVISO] Erro ao treinar IA com datasimul.csv: {e}")
+        else:
+            print("[AVISO] Arquivo datasimul.csv não encontrado. Sem base histórica de digitação.")
+
     def recarregar_estoque(self):
         """Lê o arquivo de estoque do disco dinamicamente para garantir dados atualizados."""
         print("[ARQUIVO] Lendo o estoque atualizado...")
@@ -46,42 +98,7 @@ class MotorInteligencia:
             ).fillna(24)
         else:
             self.df_estoque['Fator_Num'] = 24
-        self.media_historica_item = {} # Dicionário {codigo: media_mdv}
-        
-        caminho_datasimul = os.path.join(os.path.dirname(caminho_db), 'datasimul.csv')
-        if os.path.exists(caminho_datasimul):
-            print("[IA] Lendo datasimul.csv para treinamento do Machine Learning...")
-            try:
-                df_treino = pd.read_csv(caminho_datasimul, sep=';', encoding='latin1', low_memory=False)
-                
-                # Limpa e converte as colunas numéricas importantes
-                # Col 6: Quantidade (Target), Col 7: Estoque, Col 9: Fator
-                for col in ['Quantidade', 'Estoque', 'Fator']:
-                    if col in df_treino.columns:
-                        df_treino[col] = pd.to_numeric(
-                            df_treino[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
-                            errors='coerce'
-                        ).fillna(0)
-                        
-                # Adiciona Perfil da Loja
-                if 'Lj' in df_treino.columns:
-                    df_treino['Lj'] = pd.to_numeric(df_treino['Lj'], errors='coerce').fillna(0)
-                    df_treino['Perfil_Loja'] = df_treino['Lj'].apply(lambda x: 1 if x in self.lojas_maiores else 0)
-                else:
-                    df_treino['Perfil_Loja'] = 0
 
-                # Variáveis que a IA usa para aprender
-                features = ['Estoque', 'Fator', 'Perfil_Loja']
-                X = df_treino[features]
-                y = df_treino['Quantidade']
-
-                self.modelo_ia = RandomForestRegressor(n_estimators=100, random_state=42)
-                self.modelo_ia.fit(X, y)
-                print(f"[OK] Machine Learning Treinado com {len(df_treino)} registros do datasimul.csv!")
-            except Exception as e:
-                print(f"[AVISO] Erro ao treinar IA com datasimul.csv: {e}")
-        else:
-            print("[AVISO] Arquivo datasimul.csv não encontrado. Sem base histórica de digitação.")
 
     def calcular_distribuicao(self, codigo, modo=1, lojas_zeradas=None):
         """
