@@ -65,31 +65,28 @@ class RoboOperador(BaseOperador):
 
         self.enxergar_sistema_pronto()
 
-        if self.contador_sessao > 0:
-            pyautogui.press(['up', 'up'])
-            time.sleep(0.5)
-
-        # Limpa o campo (segurança extra)
+        # Limpa o campo de código (segurança)
         pyautogui.press('backspace', presses=8)
 
+        # 1. Digita o código do produto
         codigo_str = str(codigo)
         pyautogui.write(codigo_str, interval=0.05)
         
         if len(codigo_str) == 6:
-            self._log("[RPA] Código de 6 dígitos detectado (auto-submit). Aguardando 1s...")
-            time.sleep(1.0)
+            self._log("[RPA] Código de 6 caracteres (auto-submit). Aguardando carregar...")
+            time.sleep(1.5)
         else:
-            self._log("[RPA] Código menor que 6 dígitos. Enviando Enter e aguardando 4s...")
+            self._log("[RPA] Código menor que 6 caracteres. Enviando Enter...")
             pyautogui.press('enter')
-            time.sleep(4.0)
+            time.sleep(1.5)
 
         if status_ia == "Estoque CD Zerado/Negativo" or cd_total <= 0:
             self._log(f"[AVISO] Item {codigo}: Sem estoque no CD. Cancelando operação...")
             pyautogui.press('esc')
-            time.sleep(1.5)  # Aumentado para o usuário ver
-            pyautogui.press('n')
-            time.sleep(2.0)  # Aumentado para não atropelar
-
+            time.sleep(0.5)
+            self._log("[RPA] Seta para cima para pular o item zerado.")
+            pyautogui.press('up')
+            
             self.relatorio.append({
                 'DataHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 'Operador': self.operador,
@@ -97,74 +94,45 @@ class RoboOperador(BaseOperador):
             })
             return
 
-        for index, (loja_id, dados) in enumerate(distribuicao.items(), start=1):
-            qtd = int(dados['qtd'])
+        # 2. Digita Loja e Quantidade
+        for loja_id, dados in distribuicao.items():
+            qtd = int(dados.get('qtd', 0))
 
-            # Trava anti-negativo no nível de hardware
             if qtd > 0:
-                pyautogui.write(str(qtd), interval=0.1) # Digitação mais devagar
-                self._log(f"   Loja {loja_id}: {qtd} cx → {dados['motivo']}")
-            else:
-                self._log(f"   Loja {loja_id}: 0 cx → {dados.get('motivo', 'Ignorada')}")
-
-            time.sleep(0.1)
-            # 1º Enter (Sempre envia a quantidade digitada)
-            pyautogui.press('enter')
-            time.sleep(0.4) # Aguarda a tela reagir (mudar de linha ou piscar o aviso)
-            
-            # =========================================================
-            # CHECAGEM VISUAL DO AVISO VERMELHO (SUGESTAO ABC)
-            # =========================================================
-            # Use o arquivo 'calibrar_aviso.py' para descobrir as coordenadas X e Y do seu ERP
-            AVISO_X = 500  # COLOQUE AQUI O X DO CALIBRADOR
-            AVISO_Y = 500  # COLOQUE AQUI O Y DO CALIBRADOR
-            
-            try:
-                # Tira print de um pequeno retângulo (40x20) em volta da coordenada para tolerar pequenas tremidas da tela
-                bbox = pyautogui.screenshot(region=(AVISO_X - 20, AVISO_Y - 10, 40, 20))
-                achou_vermelho = False
-                for px in bbox.getdata():
-                    # Checa se o pixel é dominantemente vermelho (R alto, G e B baixos)
-                    if px[0] > 170 and px[1] < 70 and px[2] < 70:
-                        achou_vermelho = True
-                        break
+                self._log(f"   Loja {loja_id}: {qtd} cx → {dados.get('motivo', '')}")
                 
-                if achou_vermelho:
-                    self._log(f"   [!] Aviso vermelho detectado na Loja {loja_id}. Dando 2º Enter (Bypass)...")
+                # a. Digita a loja
+                loja_str = str(loja_id)
+                pyautogui.write(loja_str, interval=0.05)
+                
+                # Se for loja de 1 dígito (ex: 1 a 9), precisa de Enter
+                if len(loja_str) < 2:
                     pyautogui.press('enter')
-                    time.sleep(0.3)
-            except Exception as e:
-                pass # Se der erro na leitura (ex: tela minimizada), segue a vida
-            
-            # Pulo de grade exato: como a lista reflete a tela, a 13ª iteração é a 13ª linha (fim da página)
-            if index % 13 == 0:
-                self._log(f"   [!] Fim da página detectado (Loja {loja_id}). Aguardando ERP carregar próxima tela...")
-                time.sleep(1.0) # Dá tempo para o ERP começar a piscar
-                self.enxergar_sistema_pronto() # O robô só volta a digitar quando a tela 2 estabilizar 100%
-            else:
-                time.sleep(0.6) # Ritmo normal (a grade troca sozinha)
+                
+                time.sleep(0.3)
+                
+                # b. Digita a quantidade e dá dois enters
+                pyautogui.write(str(qtd), interval=0.05)
+                pyautogui.press(['enter', 'enter'])
+                time.sleep(0.5)
 
+                self.relatorio.append({
+                    'DataHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    'Operador': self.operador,
+                    'Codigo': codigo, 'Loja': loja_id,
+                    'Qtd_Enviada': max(0, qtd), 'Motivo': dados.get('motivo', '')
+                })
 
-            self.relatorio.append({
-                'DataHora': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'Operador': self.operador,
-                'Codigo': codigo, 'Loja': loja_id,
-                'Qtd_Enviada': max(0, qtd), 'Motivo': dados['motivo']
-            })
-
+        # 3. Finaliza o código com seta para cima
         time.sleep(1.0)
-        pyautogui.press(['enter', 'enter'])
-        time.sleep(1.5)
+        self._log(f"[OK] Item {codigo} finalizado. Seta para Cima para o próximo...")
+        pyautogui.press('up')
+        time.sleep(1.0)
 
-        # Confirmação final de gravação
-        pyautogui.write('s')
-        self._log(f"[OK] Item {codigo} salv com sucesso!")
         self.contador_sessao += 1
 
         # --- RETROALIMENTAÇÃO DO DB.TXT ---
         self._registrar_no_db(codigo, distribuicao, cd_total, fator)
-
-        time.sleep(4)  # Pausa para o banco de dados do ERP processar
 
     def _registrar_no_db(self, codigo, distribuicao, cd_total, fator):
         """
