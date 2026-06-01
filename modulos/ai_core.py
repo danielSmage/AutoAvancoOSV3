@@ -175,6 +175,11 @@ class MotorInteligencia:
         if pd.isna(estoque_cd_un):
             estoque_cd_un = 0
 
+        # Trava de Segurança Absoluta: 
+        # Se o estoque físico do CD for menor que 1 (ex: 0.70), já bloqueia direto.
+        if estoque_cd_un < 1:
+            return None, 0, "Estoque CD Menor que 1", fator_produto
+
         estoque_cd_cx = math.floor(estoque_cd_un / fator_produto)
         if estoque_cd_cx <= 0:
             return None, estoque_cd_cx, "Estoque CD Zerado/Negativo", fator_produto
