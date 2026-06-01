@@ -125,6 +125,20 @@ class MotorInteligencia:
             except Exception as e:
                 print(f"[AVISO] Não foi possível ler o Fator do dados.xlsx: {e}")
 
+        # Carrega a planilha de modelo de lojas zeradas
+        self.lojas_zeradas_planilha = {}
+        caminho_zeradas = os.path.join(os.path.dirname(self.caminho_estoque99), 'modelo_lojas_zeradas.xlsx')
+        if os.path.exists(caminho_zeradas):
+            try:
+                df_zeradas = pd.read_excel(caminho_zeradas)
+                if 'COD' in df_zeradas.columns and 'SUGESTAO LJ ZERADA' in df_zeradas.columns:
+                    df_zeradas['COD'] = df_zeradas['COD'].ffill()
+                    for cod, group in df_zeradas.groupby('COD'):
+                        lojas = group['SUGESTAO LJ ZERADA'].dropna().astype(int).tolist()
+                        self.lojas_zeradas_planilha[int(cod)] = lojas
+                print(f"[OK] Planilha de lojas zeradas carregada com {len(self.lojas_zeradas_planilha)} produtos!")
+            except Exception as e:
+                print(f"[AVISO] Não foi possível ler modelo_lojas_zeradas.xlsx: {e}")
 
     def calcular_distribuicao(self, codigo, modo=1, lojas_zeradas=None):
         """
@@ -208,10 +222,23 @@ class MotorInteligencia:
         # ==========================================
         total_necessidade_matematica = 0
         for info in lojas_processar:
-            if not info['tem_mix'] or (modo == 2 and info['estoque'] > 0):
+            if not info['tem_mix']:
                 continue
-            if info['mdv'] <= 0 and info['estoque'] > 0:
-                continue
+                
+            # Tratamento especial para o Modo Zerados
+            if modo == 2:
+                # Se o produto consta na planilha modelo_lojas_zeradas, prioriza estritamente aquelas lojas
+                if hasattr(self, 'lojas_zeradas_planilha') and codigo_int in self.lojas_zeradas_planilha:
+                    if info['loja'] not in self.lojas_zeradas_planilha[codigo_int]:
+                        continue
+                else:
+                    # Fallback para detecção automática: apenas lojas com estoque <= 0
+                    if info['estoque'] > 0:
+                        continue
+            else:
+                # Modo Padrão
+                if info['mdv'] <= 0 and info['estoque'] > 0:
+                    continue
 
             if info['mdv'] > 0:
                 dias_alvo = 30 if info['perfil'] == 1 else 15
