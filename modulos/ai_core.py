@@ -27,7 +27,13 @@ class MotorInteligencia:
             print(f"[IA] Lendo {os.path.basename(caminho_db)} para treinamento do Machine Learning...")
             try:
                 # O arquivo do usuário é separado por ;
-                df_treino = pd.read_csv(caminho_db, sep=';', encoding='latin1', low_memory=False)
+                # Usa tratamento flexível para ignorar linhas corrompidas (como campos vazando ponto-e-vírgula)
+                try:
+                    df_treino = pd.read_csv(caminho_db, sep=';', encoding='latin1', low_memory=False, on_bad_lines='skip')
+                except TypeError:
+                    # Fallback para versões mais antigas do pandas
+                    df_treino = pd.read_csv(caminho_db, sep=';', encoding='latin1', low_memory=False, error_bad_lines=False)
+                
                 
                 # Garante os nomes corretos
                 if 'Quantidade Digitada' in df_treino.columns:
