@@ -82,7 +82,7 @@ class MotorInteligencia:
                     
                     # Salva os fatores reais dos produtos para corrigir a divisão matemática
                     df_fatores = df_treino[['Item', 'Fator']].drop_duplicates(subset=['Item'], keep='last')
-                    self.fatores_historicos = dict(zip(df_fatores['Item'].astype(int), df_fatores['Fator'].astype(int)))
+                    self.fatores_historicos = dict(zip(df_fatores['Item'].astype(int), df_fatores['Fator'].astype(float)))
                     
             except Exception as e:
                 print(f"[ERRO CRÍTICO IA] Falha severa no treinamento: {e}")
@@ -119,7 +119,7 @@ class MotorInteligencia:
                     df_mestre_clean = df_mestre.dropna(subset=['Produto', 'Fator'])
                     self.fatores_mestre = dict(zip(
                         pd.to_numeric(df_mestre_clean['Produto'], errors='coerce').fillna(0).astype(int),
-                        pd.to_numeric(df_mestre_clean['Fator'], errors='coerce').fillna(12).astype(int)
+                        pd.to_numeric(df_mestre_clean['Fator'], errors='coerce').fillna(12).astype(float)
                     ))
                     print(f"[OK] Banco Mestre de Embalagens (dados.xlsx) carregado com {len(self.fatores_mestre)} produtos!")
             except Exception as e:
@@ -169,8 +169,9 @@ class MotorInteligencia:
         if fator_produto <= 0:
             fator_produto = 12
 
-        # Proteção contra o bug do NaN
-        estoque_str = str(df_item_completo.iloc[0]['Estoque Lojas']).replace(',', '.')
+        # Proteção contra o bug do NaN e KeyError
+        estoque_bruto = df_item_completo.iloc[0].get('Estoque Lojas', 0)
+        estoque_str = str(estoque_bruto).replace(',', '.')
         estoque_cd_un = pd.to_numeric(estoque_str, errors='coerce')
         if pd.isna(estoque_cd_un):
             estoque_cd_un = 0
@@ -276,13 +277,19 @@ class MotorInteligencia:
             # A IA só aplica seus "cortes comportamentais" se não houver saldo no CD para bancar o DDS.
             if tem_escassez and self.modelo_ia is not None:
                 try:
-                    df_pred = pd.DataFrame([{
+                    raw_pred_dict = {
                         'Lj': lj,
                         'Estoque': estoque,
                         'Fator': fator_produto,
                         'Media_Num': mdv,
                         'DDV': ddv
-                    }])
+                    }
+                    
+                    # Garante que df_pred terá APENAS as features que o modelo usou no fit, na ordem certa
+                    features_modelo = self.modelo_ia.feature_names_in_
+                    dict_filtrado = {feat: raw_pred_dict.get(feat, 0) for feat in features_modelo}
+                    
+                    df_pred = pd.DataFrame([dict_filtrado])
                     predicao_cx = self.modelo_ia.predict(df_pred)[0]
                     cx_alvo_ia = max(0, round(predicao_cx))
                     
