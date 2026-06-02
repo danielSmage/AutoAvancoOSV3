@@ -202,11 +202,13 @@ class MotorInteligencia:
         # --- FILTRO DE SAZONALIDADE ---
         media_hist = self.media_historica_item.get(codigo_int, 0)
 
-        # Prepara os dados de todas as lojas
+        # Prepara os dados de todas as lojas de forma otimizada (sem iterrows)
+        lojas_dict = df_item_completo.to_dict('records')
         lojas_processar = []
-        for _, loja in df_item_completo.iterrows():
+        
+        for loja in lojas_dict:
             lj = int(loja['Loja'])
-            mdv_final = loja['Media_Num']
+            mdv_final = float(loja.get('Media_Num', 0))
             
             if media_hist > 0 and mdv_final > (media_hist * 3):
                 mdv_final = media_hist
@@ -214,11 +216,11 @@ class MotorInteligencia:
             ddv_val = pd.to_numeric(str(loja.get('DDV', 0)).replace(',', '.'), errors='coerce')
             ddv_val = float(ddv_val) if pd.notna(ddv_val) else 0.0
             
-            estoque_loja = loja['Estoque_Num']
+            estoque_loja = float(loja.get('Estoque_Num', 0))
 
             lojas_processar.append({
                 'loja': lj,
-                'tem_mix': (loja['Mix Loja'] == 'S'),
+                'tem_mix': (str(loja.get('Mix Loja', '')).upper() == 'S'),
                 'estoque': estoque_loja,
                 'mdv': mdv_final,
                 'perfil': 1 if lj in self.lojas_maiores else 0,
