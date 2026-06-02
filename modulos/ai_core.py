@@ -81,8 +81,14 @@ class MotorInteligencia:
                     X = df_treino[features_validas].fillna(0)
                     y = df_treino[target]
                     
-                    # Motor de Random Forest 
-                    self.modelo_ia = RandomForestRegressor(n_estimators=50, random_state=42)
+                    # Motor de Random Forest Evoluído (Fine-Tuning para Padrões Sutis)
+                    self.modelo_ia = RandomForestRegressor(
+                        n_estimators=100, 
+                        max_depth=15, 
+                        min_samples_split=4, 
+                        random_state=42, 
+                        n_jobs=-1
+                    )
                     self.modelo_ia.fit(X, y)
                     print(f"[OK] Machine Learning Treinado com {len(df_treino)} registros. (Curva de Vendas e DDV acoplados!)")
                     
@@ -210,8 +216,13 @@ class MotorInteligencia:
             lj = int(loja['Loja'])
             mdv_final = float(loja.get('Media_Num', 0))
             
-            if media_hist > 0 and mdv_final > (media_hist * 3):
-                mdv_final = media_hist
+            # Detecção de Mudança de Curva (Trend Analysis)
+            aceleracao_tendencia = False
+            if media_hist > 0:
+                if mdv_final > (media_hist * 3):
+                    mdv_final = media_hist  # Trava de anomalia
+                elif mdv_final > (media_hist * 1.5):
+                    aceleracao_tendencia = True  # Aceleração de vendas detectada
 
             ddv_val = pd.to_numeric(str(loja.get('DDV', 0)).replace(',', '.'), errors='coerce')
             ddv_val = float(ddv_val) if pd.notna(ddv_val) else 0.0
@@ -224,7 +235,8 @@ class MotorInteligencia:
                 'estoque': estoque_loja,
                 'mdv': mdv_final,
                 'perfil': 1 if lj in self.lojas_maiores else 0,
-                'ddv': ddv_val
+                'ddv': ddv_val,
+                'aceleracao_tendencia': aceleracao_tendencia
             })
             distribuicao[lj]['motivo'] = 'Pendente'
             distribuicao[lj]['mdv'] = mdv_final
@@ -256,6 +268,9 @@ class MotorInteligencia:
 
             if info['mdv'] > 0:
                 dias_alvo = 30 if info['perfil'] == 1 else 15
+                if info.get('aceleracao_tendencia', False):
+                    dias_alvo += 7  # Extensão matemática de cobertura p/ itens em alta
+                    
                 nec_alvo_un = (info['mdv'] * dias_alvo) - info['estoque']
                 cx_alvo_regra = math.ceil(nec_alvo_un / fator_produto) if nec_alvo_un > 0 else 0
             else:
@@ -264,7 +279,10 @@ class MotorInteligencia:
             info['cx_alvo_regra'] = cx_alvo_regra
             total_necessidade_matematica += cx_alvo_regra
 
+        # Escassez Real
         tem_escassez = (caixas_disp < total_necessidade_matematica)
+        # Risco de Ruptura Oculta (CD não zerou, mas margem de segurança é crítica < 15%)
+        risco_ruptura_oculta = not tem_escassez and (caixas_disp < total_necessidade_matematica * 1.15)
 
         # ==========================================
         # DEFINIÇÃO DOS LIMITES E CÁLCULO FINAL
@@ -281,9 +299,9 @@ class MotorInteligencia:
             estoque = info['estoque']
             ddv = info['ddv']
 
-            # 2. IA APRENDIZADO (Trava de Escassez)
-            # A IA só aplica seus "cortes comportamentais" se não houver saldo no CD para bancar o DDS.
-            if tem_escassez and self.modelo_ia is not None:
+            # 2. IA APRENDIZADO (Trava de Escassez e Ruptura Oculta)
+            # A IA entra em cena se há escassez ou se o CD sofre risco iminente de zerar (preventivo)
+            if (tem_escassez or risco_ruptura_oculta) and self.modelo_ia is not None:
                 try:
                     raw_pred_dict = {
                         'Lj': lj,
@@ -299,7 +317,12 @@ class MotorInteligencia:
                     
                     df_pred = pd.DataFrame([dict_filtrado])
                     predicao_cx = self.modelo_ia.predict(df_pred)[0]
-                    cx_alvo_ia = max(0, round(predicao_cx))
+                    
+                    if risco_ruptura_oculta:
+                        # IA opera em modo conservador preventivo (tira menos intensidade do corte)
+                        cx_alvo_ia = max(0, math.ceil(predicao_cx * 1.1))
+                    else:
+                        cx_alvo_ia = max(0, round(predicao_cx))
                     
                     # O corte da IA age como um moderador inteligente, nunca excedendo o teto matemático
                     cx_alvo = min(cx_alvo_regra, cx_alvo_ia)
