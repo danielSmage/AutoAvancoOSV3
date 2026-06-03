@@ -214,13 +214,9 @@ class MotorInteligencia:
             lj = int(loja['Loja'])
             mdv_final = float(loja.get('Media_Num', 0))
             
-            # Detecção de Mudança de Curva (Trend Analysis)
-            aceleracao_tendencia = False
-            if media_hist > 0:
-                if mdv_final > (media_hist * 3):
-                    mdv_final = media_hist  # Trava de anomalia
-                elif mdv_final > (media_hist * 1.5):
-                    aceleracao_tendencia = True  # Aceleração de vendas detectada
+            # Trava de sazonalidade extrema (teto de 3x a média histórica)
+            if media_hist > 0 and mdv_final > (media_hist * 3):
+                mdv_final = media_hist
 
             ddv_val = pd.to_numeric(str(loja.get('DDV', 0)).replace(',', '.'), errors='coerce')
             ddv_val = float(ddv_val) if pd.notna(ddv_val) else 0.0
@@ -233,8 +229,7 @@ class MotorInteligencia:
                 'estoque': estoque_loja,
                 'mdv': mdv_final,
                 'perfil': 1 if lj in self.lojas_maiores else 0,
-                'ddv': ddv_val,
-                'aceleracao_tendencia': aceleracao_tendencia
+                'ddv': ddv_val
             })
             distribuicao[lj]['motivo'] = 'Pendente'
             distribuicao[lj]['mdv'] = mdv_final
@@ -266,9 +261,6 @@ class MotorInteligencia:
 
             if info['mdv'] > 0:
                 dias_alvo = 30 if info['perfil'] == 1 else 15
-                if info.get('aceleracao_tendencia', False):
-                    dias_alvo += 7  # Extensão matemática de cobertura p/ itens em alta
-                    
                 nec_alvo_un = (info['mdv'] * dias_alvo) - info['estoque']
                 cx_alvo_regra = math.ceil(nec_alvo_un / fator_produto) if nec_alvo_un > 0 else 0
             else:
@@ -279,8 +271,6 @@ class MotorInteligencia:
 
         # Escassez Real
         tem_escassez = (caixas_disp < total_necessidade_matematica)
-        # Risco de Ruptura Oculta (CD não zerou, mas margem de segurança é crítica < 15%)
-        risco_ruptura_oculta = not tem_escassez and (caixas_disp < total_necessidade_matematica * 1.15)
 
         # ==========================================
         # DEFINIÇÃO DOS LIMITES E CÁLCULO FINAL
@@ -297,9 +287,9 @@ class MotorInteligencia:
             estoque = info['estoque']
             ddv = info['ddv']
 
-            # 2. IA APRENDIZADO (Trava de Escassez e Ruptura Oculta)
-            # A IA entra em cena se há escassez ou se o CD sofre risco iminente de zerar (preventivo)
-            if (tem_escassez or risco_ruptura_oculta) and self.modelo_ia is not None:
+            # 2. IA APRENDIZADO (Trava de Escassez)
+            # A IA entra em cena apenas se houver escassez real no CD
+            if tem_escassez and self.modelo_ia is not None:
                 try:
                     raw_pred_dict = {
                         'Lj': lj,
@@ -315,12 +305,7 @@ class MotorInteligencia:
                     
                     df_pred = pd.DataFrame([dict_filtrado])
                     predicao_cx = self.modelo_ia.predict(df_pred)[0]
-                    
-                    if risco_ruptura_oculta:
-                        # IA opera em modo conservador preventivo real (corta 10% do envio em vez de aumentar)
-                        cx_alvo_ia = max(0, math.floor(predicao_cx * 0.9))
-                    else:
-                        cx_alvo_ia = max(0, round(predicao_cx))
+                    cx_alvo_ia = max(0, round(predicao_cx))
                     
                     # O corte da IA age como um moderador inteligente, nunca excedendo o teto matemático
                     cx_alvo = min(cx_alvo_regra, cx_alvo_ia)
