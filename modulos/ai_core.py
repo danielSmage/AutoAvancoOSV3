@@ -81,11 +81,9 @@ class MotorInteligencia:
                     X = df_treino[features_validas].fillna(0)
                     y = df_treino[target]
                     
-                    # Motor de Random Forest Evoluído (Fine-Tuning para Padrões Sutis)
+                    # Motor de Random Forest Evoluído (Sem restrição de profundidade para capturar alta complexidade)
                     self.modelo_ia = RandomForestRegressor(
                         n_estimators=100, 
-                        max_depth=15, 
-                        min_samples_split=4, 
                         random_state=42, 
                         n_jobs=-1
                     )
@@ -319,8 +317,8 @@ class MotorInteligencia:
                     predicao_cx = self.modelo_ia.predict(df_pred)[0]
                     
                     if risco_ruptura_oculta:
-                        # IA opera em modo conservador preventivo (tira menos intensidade do corte)
-                        cx_alvo_ia = max(0, math.ceil(predicao_cx * 1.1))
+                        # IA opera em modo conservador preventivo real (corta 10% do envio em vez de aumentar)
+                        cx_alvo_ia = max(0, math.floor(predicao_cx * 0.9))
                     else:
                         cx_alvo_ia = max(0, round(predicao_cx))
                     
