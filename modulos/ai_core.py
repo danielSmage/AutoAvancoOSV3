@@ -88,15 +88,12 @@ class MotorInteligencia:
                     X = df_treino[features_validas].fillna(0)
                     y = df_treino[target]
                     
-                    # Motor de Random Forest Evoluído (Sem restrição de profundidade para capturar alta complexidade)
+                    # Motor de Random Forest sem restrição extrema para permitir o "clone comportamental"
+                    # O usuário depende que o modelo decore os envios exatos (overfit)
                     self.modelo_ia = RandomForestRegressor(
                         n_estimators=200, 
                         random_state=42, 
-                        n_jobs=-1,
-                        max_depth=12,
-                        min_samples_leaf=10,
-                        min_samples_split=20,
-                        max_features='sqrt',
+                        n_jobs=-1
                     )
                     self.modelo_ia.fit(X, y)
                     print(f"[OK] Machine Learning Treinado com {len(df_treino)} registros. (Curva de Vendas e DDV acoplados!)")
