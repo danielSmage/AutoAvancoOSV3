@@ -44,7 +44,7 @@ class RoboOperador(BaseOperador):
         Visão Computacional: verifica estabilidade da tela com timeout de 10s.
         """
         self._log("[VISAO] Aguardando estabilidade da tela...")
-        timeout = 10
+        timeout = 20  # ERP pode levar até 20s para carregar produtos com muitas lojas
         start_time = time.time()
 
         while time.time() - start_time < timeout:
@@ -143,6 +143,8 @@ class RoboOperador(BaseOperador):
     def _registrar_no_db(self, codigo, distribuicao, cd_total, fator):
         """
         Salva cada distribuição no db.csv para treinar a IA continuamente.
+        Inclui contexto adicional (MDV, DDV, Alvo original) para evitar data leakage
+        e permitir que o modelo diferencie decisões ideais de decisões limitadas por escassez.
         """
         try:
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -153,6 +155,7 @@ class RoboOperador(BaseOperador):
             for loja_id, dados in distribuicao.items():
                 qtd = int(dados.get('qtd', 0))
                 if qtd > 0:
+                    cx_alvo = dados.get('cx_alvo', qtd)
                     linha = {
                         'Lj': loja_id,
                         'Data': data_hoje,
@@ -164,17 +167,46 @@ class RoboOperador(BaseOperador):
                         'Fator': fator,
                         'Peso': '',
                         'Comp': '',
-                        'N.Comp': ''
+                        'N.Comp': '',
+                        'MDV_Momento': dados.get('mdv', 0),
+                        'DDV_Momento': dados.get('ddv', 0),
+                        'Qtd_Alvo_Original': cx_alvo,
+                        'Foi_Limitado': 1 if qtd < cx_alvo else 0,
                     }
                     linhas.append(linha)
 
             if linhas:
                 df_novo = pd.DataFrame(linhas)
+                
+                # Deduplicação: não grava se o mesmo item+loja+data já existe no db.csv
                 if os.path.exists(caminho_db):
-                    df_novo.to_csv(caminho_db, mode='a', sep=';', index=False, header=False, encoding='latin1')
+                    try:
+                        df_existente = pd.read_csv(caminho_db, sep=';', encoding='latin1',
+                                                   low_memory=False, on_bad_lines='skip',
+                                                   usecols=['Lj', 'Data', 'Item'])
+                        chaves_existentes = set(
+                            zip(df_existente['Lj'].astype(str),
+                                df_existente['Data'].astype(str),
+                                df_existente['Item'].astype(str))
+                        )
+                        df_novo['_chave'] = list(zip(
+                            df_novo['Lj'].astype(str),
+                            df_novo['Data'].astype(str),
+                            df_novo['Item'].astype(str)
+                        ))
+                        df_novo = df_novo[~df_novo['_chave'].isin(chaves_existentes)]
+                        df_novo = df_novo.drop(columns=['_chave'])
+                    except Exception:
+                        pass  # Se falhar a leitura, grava sem dedup
+                
+                if not df_novo.empty:
+                    if os.path.exists(caminho_db):
+                        df_novo.to_csv(caminho_db, mode='a', sep=';', index=False, header=False, encoding='latin1')
+                    else:
+                        df_novo.to_csv(caminho_db, mode='w', sep=';', index=False, header=True, encoding='latin1')
+                    self._log(f"[DB] db.csv atualizado com {len(df_novo)} linha(s) do item {codigo}.")
                 else:
-                    df_novo.to_csv(caminho_db, mode='w', sep=';', index=False, header=True, encoding='latin1')
-                self._log(f"[DB] db.csv atualizado com {len(linhas)} linha(s) do item {codigo}.")
+                    self._log(f"[DB] Item {codigo} já registrado hoje — pulando dedup.")
         except Exception as e:
             self._log(f"[AVISO] Erro ao salvar no db.csv: {e}")
 

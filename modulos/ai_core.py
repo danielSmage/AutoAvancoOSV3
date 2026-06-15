@@ -53,6 +53,8 @@ class MotorInteligencia:
                     df_estoque_slim = self.df_estoque[['Loja', 'Codigo_Produto', 'Media_Num', 'DDV']].copy()
                     df_estoque_slim['Loja'] = pd.to_numeric(df_estoque_slim['Loja'], errors='coerce').fillna(0)
                     df_estoque_slim['Codigo_Produto'] = pd.to_numeric(df_estoque_slim['Codigo_Produto'], errors='coerce').fillna(0)
+                    # Filtra lojas fantasma (70, 72, 73 — depósitos internos) para não contaminar o treino
+                    df_estoque_slim = df_estoque_slim[df_estoque_slim['Loja'].isin(self.lojas_validas)]
                     
                     df_treino['Lj'] = pd.to_numeric(df_treino['Lj'], errors='coerce').fillna(0)
                     df_treino['Item'] = pd.to_numeric(df_treino['Item'], errors='coerce').fillna(0)
@@ -70,8 +72,13 @@ class MotorInteligencia:
                     df_treino['Media_Num'] = 0
                     df_treino['DDV'] = 0
 
-                # Agora a IA aprende com o MDV (curva de vendas) e o DDV (dias para ruptura)!
-                features = ['Lj', 'Estoque', 'Fator', 'Media_Num', 'DDV']
+                # Enriquece com Perfil de Loja (maior=1, menor=0) para decisões mais precisas
+                df_treino['Perfil_Loja'] = df_treino['Lj'].apply(
+                    lambda x: 1 if int(x) in self.lojas_maiores else 0
+                )
+
+                # Agora a IA aprende com o MDV (curva de vendas), DDV e Perfil de Loja!
+                features = ['Lj', 'Estoque', 'Fator', 'Media_Num', 'DDV', 'Perfil_Loja']
                 target = 'Quantidade'
 
                 # Pega apenas colunas que realmente existem
@@ -83,9 +90,13 @@ class MotorInteligencia:
                     
                     # Motor de Random Forest Evoluído (Sem restrição de profundidade para capturar alta complexidade)
                     self.modelo_ia = RandomForestRegressor(
-                        n_estimators=100, 
+                        n_estimators=200, 
                         random_state=42, 
-                        n_jobs=-1
+                        n_jobs=-1,
+                        max_depth=12,
+                        min_samples_leaf=10,
+                        min_samples_split=20,
+                        max_features='sqrt',
                     )
                     self.modelo_ia.fit(X, y)
                     print(f"[OK] Machine Learning Treinado com {len(df_treino)} registros. (Curva de Vendas e DDV acoplados!)")
@@ -93,6 +104,12 @@ class MotorInteligencia:
                     # Salva os fatores reais dos produtos para corrigir a divisão matemática
                     df_fatores = df_treino[['Item', 'Fator']].drop_duplicates(subset=['Item'], keep='last')
                     self.fatores_historicos = dict(zip(df_fatores['Item'].astype(int), df_fatores['Fator'].astype(float)))
+                    
+                    # Popula a média histórica de MDV por item para ativar a trava de sazonalidade
+                    if 'Media_Num' in df_treino.columns:
+                        df_media_valida = df_treino[df_treino['Media_Num'] > 0]
+                        self.media_historica_item = df_media_valida.groupby('Item')['Media_Num'].mean().to_dict()
+                        print(f"[OK] Trava de Sazonalidade ativa para {len(self.media_historica_item)} itens.")
                     
             except Exception as e:
                 print(f"[ERRO CRÍTICO IA] Falha severa no treinamento: {e}")
@@ -180,7 +197,12 @@ class MotorInteligencia:
             fator_produto = 12
 
         # Proteção contra o bug do NaN e KeyError
-        estoque_bruto = df_item_completo.iloc[0].get('Estoque Lojas', 0)
+        # Usa o valor mais frequente (mode) em vez de iloc[0] para evitar dados corrompidos
+        estoque_lojas_serie = df_item_completo['Estoque Lojas'].dropna()
+        if not estoque_lojas_serie.empty:
+            estoque_bruto = estoque_lojas_serie.mode().iloc[0]
+        else:
+            estoque_bruto = 0
         estoque_str = str(estoque_bruto).replace(',', '.')
         estoque_cd_un = pd.to_numeric(estoque_str, errors='coerce')
         if pd.isna(estoque_cd_un):
@@ -260,9 +282,22 @@ class MotorInteligencia:
                     continue
 
             if info['mdv'] > 0:
-                dias_alvo = 30 if info['perfil'] == 1 else 15
+                # Dias-alvo adaptativo baseado na velocidade de giro do produto
+                if info['mdv'] > 5:     # alto giro (>5 un/dia)
+                    dias_alvo = 21 if info['perfil'] == 1 else 14
+                elif info['mdv'] > 1:   # médio giro (1-5 un/dia)
+                    dias_alvo = 30 if info['perfil'] == 1 else 21
+                else:                   # baixo giro (<1 un/dia)
+                    dias_alvo = 45 if info['perfil'] == 1 else 30
+
                 nec_alvo_un = (info['mdv'] * dias_alvo) - info['estoque']
                 cx_alvo_regra = math.ceil(nec_alvo_un / fator_produto) if nec_alvo_un > 0 else 0
+                
+                # Teto de segurança por perfil de loja (evita envios absurdos)
+                TETO_MAIOR = 45  # pallet fechado
+                TETO_MENOR = 22  # meio pallet
+                teto = TETO_MAIOR if info['perfil'] == 1 else TETO_MENOR
+                cx_alvo_regra = min(cx_alvo_regra, teto)
             else:
                 cx_alvo_regra = 1 if info['estoque'] <= 0 else 0
                 
@@ -296,7 +331,8 @@ class MotorInteligencia:
                         'Estoque': estoque,
                         'Fator': fator_produto,
                         'Media_Num': mdv,
-                        'DDV': ddv
+                        'DDV': ddv,
+                        'Perfil_Loja': info['perfil'],
                     }
                     
                     # Garante que df_pred terá APENAS as features que o modelo usou no fit, na ordem certa
@@ -322,7 +358,12 @@ class MotorInteligencia:
                 nec_urgente = (mdv * 10) - estoque
                 cx_min = max(0, math.ceil(nec_urgente / fator_produto))
 
-            cx_min = min(cx_min, cx_alvo)
+            # O mínimo de segurança respeita o corte da IA, mas nunca zera lojas em ruptura
+            if cx_min > cx_alvo and cx_alvo > 0:
+                cx_min = cx_alvo
+            # Garantia absoluta: loja zerada recebe ao menos 1 cx independente da IA
+            if estoque <= 0 and cx_min <= 0:
+                cx_min = 1
 
             if cx_alvo > 0 or cx_min > 0:
                 necessidades.append({
@@ -378,6 +419,12 @@ class MotorInteligencia:
                     distribuicao[lj]['motivo'] = "Sem Mix"
                 else:
                     if distribuicao[lj]['motivo'] == 'Pendente':
-                        distribuicao[lj]['motivo'] = "Estoque Suficiente"
+                        # Diferencia loja com estoque suficiente de loja com produto parado
+                        mdv_loja = distribuicao[lj].get('mdv', 0)
+                        est_loja = distribuicao[lj].get('estoque', 0)
+                        if mdv_loja <= 0 and est_loja > 0:
+                            distribuicao[lj]['motivo'] = "Sem Giro (Produto Parado)"
+                        else:
+                            distribuicao[lj]['motivo'] = "Estoque Suficiente"
 
         return distribuicao, estoque_cd_cx, "Sucesso", fator_produto

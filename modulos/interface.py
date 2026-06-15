@@ -303,13 +303,14 @@ def abrir_tela_login():
 
         btn_login.configure(state="disabled", text="Verificando...")
 
-        # --- BYPASS DE AUTENTICAÇÃO PARA TESTES ---
+        # --- ⚠️ BYPASS DE AUTENTICAÇÃO ATIVO (DESABILITAR EM PRODUÇÃO!) ---
+        # TODO: Remover o bypass abaixo e descomentar o bloco de autenticação real
         # sucesso, msg = auth.login_usuario(email, senha)
         # se sucesso:
         #     sucesso_per, info_per = auth.verificar_usuario_ativo()
         #     se sucesso_per:
         
-        # Pula direto para a tela principal
+        # BYPASS: Pula direto para a tela principal (APENAS para testes!)
         login.destroy()
         abrir_tela_principal(email.split('@')[0])
         
