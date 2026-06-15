@@ -197,12 +197,7 @@ class MotorInteligencia:
             fator_produto = 12
 
         # Proteção contra o bug do NaN e KeyError
-        # Usa o valor mais frequente (mode) em vez de iloc[0] para evitar dados corrompidos
-        estoque_lojas_serie = df_item_completo['Estoque Lojas'].dropna()
-        if not estoque_lojas_serie.empty:
-            estoque_bruto = estoque_lojas_serie.mode().iloc[0]
-        else:
-            estoque_bruto = 0
+        estoque_bruto = df_item_completo.iloc[0].get('Estoque Lojas', 0)
         estoque_str = str(estoque_bruto).replace(',', '.')
         estoque_cd_un = pd.to_numeric(estoque_str, errors='coerce')
         if pd.isna(estoque_cd_un):
