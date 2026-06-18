@@ -1,7 +1,6 @@
 import pandas as pd
 import math
 import os
-from sklearn.ensemble import RandomForestRegressor
 
 class MotorInteligencia:
     def __init__(self, caminho_db, caminho_estoque99):
@@ -70,29 +69,15 @@ class MotorInteligencia:
                     df_treino['Media_Num'] = 0
                     df_treino['DDV'] = 0
 
-                # Agora a IA aprende com o MDV (curva de vendas) e o DDV (dias para ruptura)!
-                features = ['Lj', 'Estoque', 'Fator', 'Media_Num', 'DDV']
-                target = 'Quantidade'
-
-                # Pega apenas colunas que realmente existem
-                features_validas = [f for f in features if f in df_treino.columns]
-                
-                if features_validas and target in df_treino.columns:
-                    X = df_treino[features_validas].fillna(0)
-                    y = df_treino[target]
+                # IA DESATIVADA: O db.csv contém dados ruidosos (envios limitados por escassez)
+                # que fazem a IA aprender a enviar menos do que o necessário.
+                # Solução: usar apenas matemática pura (MDV * dias - estoque) para distribuir.
+                # O db.csv continua sendo usado APENAS para extrair os fatores históricos.
+                print(f"[IA] db.csv lido com {len(df_treino)} registros. (ML desativado — modo matemática pura)")
                     
-                    # Motor de Random Forest Evoluído (Sem restrição de profundidade para capturar alta complexidade)
-                    self.modelo_ia = RandomForestRegressor(
-                        n_estimators=100, 
-                        random_state=42, 
-                        n_jobs=-1
-                    )
-                    self.modelo_ia.fit(X, y)
-                    print(f"[OK] Machine Learning Treinado com {len(df_treino)} registros. (Curva de Vendas e DDV acoplados!)")
-                    
-                    # Salva os fatores reais dos produtos para corrigir a divisão matemática
-                    df_fatores = df_treino[['Item', 'Fator']].drop_duplicates(subset=['Item'], keep='last')
-                    self.fatores_historicos = dict(zip(df_fatores['Item'].astype(int), df_fatores['Fator'].astype(float)))
+                # Salva os fatores reais dos produtos para corrigir a divisão matemática
+                df_fatores = df_treino[['Item', 'Fator']].drop_duplicates(subset=['Item'], keep='last')
+                self.fatores_historicos = dict(zip(df_fatores['Item'].astype(int), df_fatores['Fator'].astype(float)))
                     
             except Exception as e:
                 print(f"[ERRO CRÍTICO IA] Falha severa no treinamento: {e}")
@@ -287,31 +272,8 @@ class MotorInteligencia:
             estoque = info['estoque']
             ddv = info['ddv']
 
-            # 2. IA APRENDIZADO (Trava de Escassez)
-            # A IA entra em cena apenas se houver escassez real no CD
-            if tem_escassez and self.modelo_ia is not None:
-                try:
-                    raw_pred_dict = {
-                        'Lj': lj,
-                        'Estoque': estoque,
-                        'Fator': fator_produto,
-                        'Media_Num': mdv,
-                        'DDV': ddv
-                    }
-                    
-                    # Garante que df_pred terá APENAS as features que o modelo usou no fit, na ordem certa
-                    features_modelo = self.modelo_ia.feature_names_in_
-                    dict_filtrado = {feat: raw_pred_dict.get(feat, 0) for feat in features_modelo}
-                    
-                    df_pred = pd.DataFrame([dict_filtrado])
-                    predicao_cx = self.modelo_ia.predict(df_pred)[0]
-                    cx_alvo_ia = max(0, round(predicao_cx))
-                    
-                    # O corte da IA age como um moderador inteligente, nunca excedendo o teto matemático
-                    cx_alvo = min(cx_alvo_regra, cx_alvo_ia)
-                except Exception as e:
-                    print(f"[ERRO IA] Falha ao prever alvo para Loja {lj}: {e}")
-                    pass
+            # cx_alvo segue a regra matemática pura (MDV * dias - estoque) / fator
+            # ML desativado: db.csv ruidoso fazia a IA cortar quantidades indevidamente
 
             # 3. Mínimo de Segurança (Onda 1)
             cx_min = 0
