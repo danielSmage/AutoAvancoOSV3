@@ -135,15 +135,21 @@ class MotorInteligencia:
             except Exception as e:
                 print(f"[AVISO] Não foi possível ler modelo_lojas_zeradas.xlsx: {e}")
 
-    def calcular_distribuicao(self, codigo, modo=1, lojas_zeradas=None):
+    def calcular_distribuicao(self, codigo, modo=1, lojas_zeradas=None, dias_grande=None, dias_pequena=None):
         """
         Calcula a distribuição em DUAS ONDAS:
         1. Prioridade absoluta para lojas zeradas.
-        2. Distribuição inteligente baseada em IA e Giro.
+        2. Distribuição inteligente baseada em Giro.
 
         Modo 1 = Distribuição Padrão
         Modo 2 = Focar lojas zeradas (detectadas automaticamente via estoque99)
+        
+        dias_grande / dias_pequena: override manual do giro-alvo (para promoções).
+                                    Se None, usa os padrões 30/15.
         """
+        # Define os dias-alvo (manual ou padrão)
+        alvo_grande = dias_grande if dias_grande is not None else 30
+        alvo_pequena = dias_pequena if dias_pequena is not None else 15
         codigo_int = int(codigo)
         df_raw = self.df_estoque[self.df_estoque['Codigo_Produto'] == codigo_int]
         # Filtra apenas lojas válidas E que possuem MIX (o ERP não exibe lojas sem Mix)
@@ -245,7 +251,7 @@ class MotorInteligencia:
                     continue
 
             if info['mdv'] > 0:
-                dias_alvo = 30 if info['perfil'] == 1 else 15
+                dias_alvo = alvo_grande if info['perfil'] == 1 else alvo_pequena
                 nec_alvo_un = (info['mdv'] * dias_alvo) - info['estoque']
                 cx_alvo_regra = math.ceil(nec_alvo_un / fator_produto) if nec_alvo_un > 0 else 0
             else:
@@ -343,3 +349,106 @@ class MotorInteligencia:
                         distribuicao[lj]['motivo'] = "Estoque Suficiente"
 
         return distribuicao, estoque_cd_cx, "Sucesso", fator_produto
+
+    def encontrar_pallets(self, dias_alvo_max=35, estoque_cd_minimo_cx=20, max_resultados=50):
+        """
+        Varre o estoque99 procurando produtos onde:
+        - O CD tem estoque alto (>= estoque_cd_minimo_cx caixas)
+        - As lojas precisam de caixas suficientes para justificar envio (~1 pallet)
+        
+        Retorna lista de dicts: [{codigo, descricao, estoque_cd_cx, fator, necessidade_total_cx,
+                                  lojas_precisando, cx_por_loja_media}]
+        """
+        resultados = []
+        
+        # Agrupa por produto para iterar uma vez
+        produtos = self.df_estoque.groupby('Codigo_Produto')
+        
+        for codigo_int, df_produto in produtos:
+            try:
+                codigo_int = int(codigo_int)
+            except (ValueError, TypeError):
+                continue
+            
+            # Filtra lojas válidas com Mix
+            df_valido = df_produto[
+                (df_produto['Loja'].astype(int).isin(self.lojas_validas)) &
+                (df_produto['Mix Loja'] == 'S')
+            ]
+            
+            if df_valido.empty:
+                continue
+            
+            # Pega o estoque do CD
+            estoque_bruto = df_valido.iloc[0].get('Estoque Lojas', 0)
+            estoque_str = str(estoque_bruto).replace(',', '.')
+            estoque_cd_un = pd.to_numeric(estoque_str, errors='coerce')
+            if pd.isna(estoque_cd_un) or estoque_cd_un < 1:
+                continue
+            
+            # Fator do produto
+            fator = self.fatores_mestre.get(codigo_int)
+            if not fator or fator <= 0:
+                fator = self.fatores_historicos.get(codigo_int, 12)
+            if fator <= 0:
+                fator = 12
+            
+            estoque_cd_cx = math.floor(estoque_cd_un / fator)
+            if estoque_cd_cx < estoque_cd_minimo_cx:
+                continue
+            
+            # Calcula necessidade total das lojas para atingir dias_alvo_max
+            total_nec_cx = 0
+            lojas_precisando = 0
+            
+            for _, loja in df_valido.iterrows():
+                lj = int(loja['Loja'])
+                if lj in self.lojas_bugadas_erp:
+                    continue
+                
+                mdv = float(loja.get('Media_Num', 0))
+                estoque_loja = pd.to_numeric(
+                    str(loja.get('Estoque', 0)).replace(',', '.'), errors='coerce'
+                )
+                if pd.isna(estoque_loja):
+                    estoque_loja = 0
+                
+                if mdv <= 0:
+                    continue
+                
+                # Dias de estoque atuais da loja
+                ddv_loja = estoque_loja / mdv if mdv > 0 else 999
+                
+                if ddv_loja < dias_alvo_max:
+                    # Loja precisa de reposição
+                    nec_un = (mdv * dias_alvo_max) - estoque_loja
+                    nec_cx = math.ceil(nec_un / fator) if nec_un > 0 else 0
+                    if nec_cx > 0:
+                        total_nec_cx += nec_cx
+                        lojas_precisando += 1
+            
+            if total_nec_cx <= 0 or lojas_precisando == 0:
+                continue
+            
+            # Só mostra se cabe pelo menos 80% da necessidade no CD
+            cobertura = min(estoque_cd_cx, total_nec_cx)
+            if cobertura < total_nec_cx * 0.8:
+                continue
+            
+            descricao = str(df_valido.iloc[0].get('Descrição', df_valido.iloc[0].get('Descricao', '')))
+            
+            resultados.append({
+                'codigo': codigo_int,
+                'descricao': descricao[:40],
+                'estoque_cd_cx': estoque_cd_cx,
+                'fator': int(fator),
+                'necessidade_total_cx': total_nec_cx,
+                'lojas_precisando': lojas_precisando,
+                'cx_por_loja_media': round(total_nec_cx / lojas_precisando, 1),
+                'cobertura_pct': round((cobertura / total_nec_cx) * 100, 0)
+            })
+        
+        # Ordena por maior necessidade (melhores candidatos a pallet)
+        resultados.sort(key=lambda x: x['necessidade_total_cx'], reverse=True)
+        
+        return resultados[:max_resultados]
