@@ -27,10 +27,8 @@ venv/
 ENV/
 
 # Project Specific
-.env
 dados/*.csv
 dados/*.txt
-dados/*.xlsx
 relatorios/*.csv
 *.spec
 
