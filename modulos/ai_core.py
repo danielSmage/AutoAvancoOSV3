@@ -104,19 +104,25 @@ class MotorInteligencia:
         self.df_estoque['Estoque_Num'] = pd.to_numeric(self.df_estoque['Estoque'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
 
         # Carrega o banco de dados mestre de embalagens (dados.xlsx) se existir
+        # O fator fica na coluna AE ("Fator") e o código na coluna A ("Produto")
         self.fatores_mestre = {}
         caminho_dados_xlsx = os.path.join(os.path.dirname(self.caminho_estoque99), 'dados.xlsx')
         if os.path.exists(caminho_dados_xlsx):
             try:
-                df_mestre = pd.read_excel(caminho_dados_xlsx)
-                if 'Produto' in df_mestre.columns and 'Fator' in df_mestre.columns:
-                    # Limpa NaNs
-                    df_mestre_clean = df_mestre.dropna(subset=['Produto', 'Fator'])
-                    self.fatores_mestre = dict(zip(
-                        pd.to_numeric(df_mestre_clean['Produto'], errors='coerce').fillna(0).astype(int),
-                        pd.to_numeric(df_mestre_clean['Fator'], errors='coerce').fillna(12).astype(float)
-                    ))
-                    print(f"[OK] Banco Mestre de Embalagens (dados.xlsx) carregado com {len(self.fatores_mestre)} produtos!")
+                df_mestre = pd.read_excel(caminho_dados_xlsx, usecols=['Produto', 'Fator'])
+                # Limpa NaNs e converte
+                df_mestre['Produto'] = pd.to_numeric(df_mestre['Produto'], errors='coerce')
+                df_mestre['Fator'] = pd.to_numeric(df_mestre['Fator'], errors='coerce')
+                # FILTRA: só guarda produtos com fator > 0 (60% dos registros tem fator=0)
+                df_mestre_valido = df_mestre.dropna(subset=['Produto', 'Fator'])
+                df_mestre_valido = df_mestre_valido[df_mestre_valido['Fator'] > 0]
+                self.fatores_mestre = dict(zip(
+                    df_mestre_valido['Produto'].astype(int),
+                    df_mestre_valido['Fator'].astype(float)
+                ))
+                total_lidos = len(df_mestre)
+                total_validos = len(self.fatores_mestre)
+                print(f"[OK] dados.xlsx: {total_validos} produtos com fator válido (de {total_lidos} total)")
             except Exception as e:
                 print(f"[AVISO] Não foi possível ler o Fator do dados.xlsx: {e}")
 
