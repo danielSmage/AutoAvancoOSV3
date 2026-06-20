@@ -101,6 +101,8 @@ class AppReposicao(ctk.CTk):
         self.title(f"AVANÇO PRO SYSTEM V2 — {operador_logado.upper()}")
         self.geometry("620x860")
 
+        self._stop_requested = False
+
         self.preparar_motores()
 
         # Layout
@@ -201,14 +203,28 @@ class AppReposicao(ctk.CTk):
         self.txt_codigos = ctk.CTkTextbox(tab, font=("Consolas", 12), height=100)
         self.txt_codigos.grid(row=3, column=0, padx=15, pady=5, sticky="nsew")
 
-        # --- BOTÃO DE INÍCIO ---
+        # --- BOTÕES DE CONTROLE ---
+        frame_botoes = ctk.CTkFrame(tab, fg_color="transparent")
+        frame_botoes.grid(row=4, column=0, padx=15, pady=(10, 5), sticky="ew")
+        frame_botoes.grid_columnconfigure(0, weight=1)
+        frame_botoes.grid_columnconfigure(1, weight=0)
+
         self.btn_iniciar = ctk.CTkButton(
-            tab, text="▶  EXECUTAR RPA", height=45,
+            frame_botoes, text="▶  EXECUTAR RPA", height=45,
             font=ctk.CTkFont(size=15, weight="bold"),
             fg_color="#1f538d", hover_color="#14375e",
             command=self.ao_clicar_iniciar
         )
-        self.btn_iniciar.grid(row=4, column=0, padx=15, pady=(10, 5), sticky="ew")
+        self.btn_iniciar.grid(row=0, column=0, sticky="ew")
+
+        self.btn_parar = ctk.CTkButton(
+            frame_botoes, text="⏹ PARAR", height=45, width=110,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            fg_color="#8b1a1a", hover_color="#b22222",
+            command=self._ao_clicar_parar,
+            state="disabled"
+        )
+        self.btn_parar.grid(row=0, column=1, padx=(10, 0), sticky="e")
 
         # --- ÁREA DE LOG EM TEMPO REAL ---
         ctk.CTkLabel(tab, text="LOG DE OPERAÇÃO", font=ctk.CTkFont(size=11, weight="bold"), text_color="gray").grid(
@@ -387,15 +403,23 @@ class AppReposicao(ctk.CTk):
             messagebox.showwarning("Aviso", "Insira pelo menos um código.")
             return
 
-        # Limpa o log anterior
+        # Limpa o log anterior e reseta a flag de parada
         self.txt_log.configure(state="normal")
         self.txt_log.delete("1.0", "end")
         self.txt_log.configure(state="disabled")
+        self._stop_requested = False
 
         self.btn_iniciar.configure(state="disabled", text="EM EXECUÇÃO...")
+        self.btn_parar.configure(state="normal")
         self.lbl_status.configure(text="Aguardando 5 segundos para início...", text_color="#ffcc00")
 
         threading.Thread(target=self.processar_automacao, args=(texto,), daemon=True).start()
+
+    def _ao_clicar_parar(self):
+        self._stop_requested = True
+        self.btn_parar.configure(state="disabled", text="PARANDO...")
+        self.lbl_status.configure(text="⏹ Parando após o item atual...", text_color="#ff8800")
+        self._log("\n⏹ PARADA SOLICITADA — finalizando item atual...")
 
     def processar_automacao(self, codigos_texto):
         try:
@@ -416,9 +440,19 @@ class AppReposicao(ctk.CTk):
             self._log(f"📋 {len(codigos)} código(s) na fila: {codigos}")
             self._log("⏳ Aguardando 5 segundos — mova o cursor para a tela do Avanço...")
 
-            time.sleep(5)
+            # Espera interrompível de 5 segundos
+            for _ in range(50):
+                if self._stop_requested:
+                    self._log("\n⏹ PARADO antes de iniciar.")
+                    return
+                time.sleep(0.1)
 
             for i, cod in enumerate(codigos):
+                # Checa a flag de parada ANTES de cada item
+                if self._stop_requested:
+                    self._log(f"\n⏹ PARADO pelo usuário após {i} de {len(codigos)} itens.")
+                    break
+
                 self.after(0, lambda i=i, cod=cod: self.lbl_status.configure(
                     text=f"Processando Item {i+1}/{len(codigos)}: {cod}", text_color="#ffcc00"))
 
@@ -444,15 +478,24 @@ class AppReposicao(ctk.CTk):
                 self.robo.executar_item(cod, distribuicao, cd_total, status, fator_real)
 
             self.robo.gerar_relatorio_csv()
-            self._log("\n✅ PROCESSAMENTO FINALIZADO!")
-            self.after(0, lambda: self.lbl_status.configure(text="Finalizado com sucesso!", text_color="#44ff44"))
-            messagebox.showinfo("Sucesso", "RPA finalizado com sucesso!\nRelatório salvo na pasta 'relatorios'.")
+            if self._stop_requested:
+                self._log("\n⚠️ PROCESSAMENTO INTERROMPIDO PELO USUÁRIO")
+                self.after(0, lambda: self.lbl_status.configure(text="Parado pelo usuário.", text_color="#ff8800"))
+            else:
+                self._log("\n✅ PROCESSAMENTO FINALIZADO!")
+                self.after(0, lambda: self.lbl_status.configure(text="Finalizado com sucesso!", text_color="#44ff44"))
+                messagebox.showinfo("Sucesso", "RPA finalizado com sucesso!\nRelatório salvo na pasta 'relatorios'.")
 
         except Exception as e:
             self._log(f"\n❌ ERRO CRÍTICO: {str(e)}")
             messagebox.showerror("Erro Crítico", f"Falha na automação:\n{str(e)}")
         finally:
-            self.after(0, lambda: self.btn_iniciar.configure(state="normal", text="▶  EXECUTAR RPA"))
+            self.after(0, self._resetar_botoes)
+
+    def _resetar_botoes(self):
+        self.btn_iniciar.configure(state="normal", text="▶  EXECUTAR RPA")
+        self.btn_parar.configure(state="disabled", text="⏹ PARAR")
+        self._stop_requested = False
 
 
 def abrir_tela_principal(operador):
