@@ -100,8 +100,8 @@ class MotorInteligencia:
             self.df_estoque.rename(columns={colunas_codigo[0]: 'Codigo_Produto'}, inplace=True)
             
         print("Colunas do dataframe:", self.df_estoque.columns.tolist())
-        self.df_estoque['Media_Num'] = pd.to_numeric(self.df_estoque['Media'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-        self.df_estoque['Estoque_Num'] = pd.to_numeric(self.df_estoque['Estoque'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+        self.df_estoque['Media_Num'] = pd.to_numeric(self.df_estoque['Media'].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce').fillna(0)
+        self.df_estoque['Estoque_Num'] = pd.to_numeric(self.df_estoque['Estoque'].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce').fillna(0)
 
         # Carrega o banco de dados mestre de embalagens (dados.xlsx) se existir
         # O fator fica na coluna AE ("Fator") e o código na coluna A ("Produto")
@@ -160,7 +160,7 @@ class MotorInteligencia:
         df_raw = self.df_estoque[self.df_estoque['Codigo_Produto'] == codigo_int]
         # Filtra apenas lojas válidas E que possuem MIX (o ERP não exibe lojas sem Mix)
         df_item_completo = df_raw[
-            (df_raw['Loja'].astype(int).isin(self.lojas_validas)) & 
+            (pd.to_numeric(df_raw['Loja'], errors='coerce').isin(self.lojas_validas)) & 
             (df_raw['Mix Loja'] == 'S')
         ].sort_values(by='Loja')
 
@@ -178,7 +178,7 @@ class MotorInteligencia:
 
         # Proteção contra o bug do NaN e KeyError
         estoque_bruto = df_item_completo.iloc[0].get('Estoque Lojas', 0)
-        estoque_str = str(estoque_bruto).replace(',', '.')
+        estoque_str = str(estoque_bruto).replace('.', '').replace(',', '.')
         estoque_cd_un = pd.to_numeric(estoque_str, errors='coerce')
         if pd.isna(estoque_cd_un):
             estoque_cd_un = 0
@@ -215,7 +215,7 @@ class MotorInteligencia:
             if media_hist > 0 and mdv_final > (media_hist * 3):
                 mdv_final = media_hist
 
-            ddv_val = pd.to_numeric(str(loja.get('DDV', 0)).replace(',', '.'), errors='coerce')
+            ddv_val = pd.to_numeric(str(loja.get('DDV', 0)).replace('.', '').replace(',', '.'), errors='coerce')
             ddv_val = float(ddv_val) if pd.notna(ddv_val) else 0.0
             
             estoque_loja = float(loja.get('Estoque_Num', 0))
@@ -378,7 +378,7 @@ class MotorInteligencia:
             
             # Filtra lojas válidas com Mix
             df_valido = df_produto[
-                (df_produto['Loja'].astype(int).isin(self.lojas_validas)) &
+                (pd.to_numeric(df_produto['Loja'], errors='coerce').isin(self.lojas_validas)) &
                 (df_produto['Mix Loja'] == 'S')
             ]
             
@@ -387,7 +387,7 @@ class MotorInteligencia:
             
             # Pega o estoque do CD
             estoque_bruto = df_valido.iloc[0].get('Estoque Lojas', 0)
-            estoque_str = str(estoque_bruto).replace(',', '.')
+            estoque_str = str(estoque_bruto).replace('.', '').replace(',', '.')
             estoque_cd_un = pd.to_numeric(estoque_str, errors='coerce')
             if pd.isna(estoque_cd_un) or estoque_cd_un < 1:
                 continue
@@ -414,7 +414,7 @@ class MotorInteligencia:
                 
                 mdv = float(loja.get('Media_Num', 0))
                 estoque_loja = pd.to_numeric(
-                    str(loja.get('Estoque', 0)).replace(',', '.'), errors='coerce'
+                    str(loja.get('Estoque', 0)).replace('.', '').replace(',', '.'), errors='coerce'
                 )
                 if pd.isna(estoque_loja):
                     estoque_loja = 0
