@@ -103,28 +103,62 @@ class MotorInteligencia:
         self.df_estoque['Media_Num'] = pd.to_numeric(self.df_estoque['Media'].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce').fillna(0)
         self.df_estoque['Estoque_Num'] = pd.to_numeric(self.df_estoque['Estoque'].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce').fillna(0)
 
-        # Carrega o banco de dados mestre de embalagens (dados.xlsx) se existir
-        # O fator fica na coluna AE ("Fator") e o código na coluna A ("Produto")
+        # Carrega o cadastro mestre de produtos (sp10a02.csv) — substitui o antigo dados.xlsx
+        # Contém: Fator, Norma (cxs/pallet), Lastro, Camada, Peso, Departamento, Categoria
         self.fatores_mestre = {}
-        caminho_dados_xlsx = os.path.join(os.path.dirname(self.caminho_estoque99), 'dados.xlsx')
-        if os.path.exists(caminho_dados_xlsx):
+        self.normas_mestre = {}    # Norma = qtd caixas por pallet
+        self.dados_mestre = {}     # Dados completos do cadastro por produto
+        caminho_sp10 = os.path.join(os.path.dirname(self.caminho_estoque99), 'sp10a02.csv')
+        if os.path.exists(caminho_sp10):
             try:
-                df_mestre = pd.read_excel(caminho_dados_xlsx, usecols=['Produto', 'Fator'])
-                # Limpa NaNs e converte
+                df_mestre = pd.read_csv(
+                    caminho_sp10, sep=';', encoding='latin1', low_memory=False,
+                    usecols=['Produto', 'Desc', 'Fator', 'Norma', 'Lastro', 'Camada',
+                             'Peso', 'Departamento', 'Categoria']
+                )
+                # Converte campos numéricos (formato brasileiro: 0012,0000)
+                for col in ['Fator', 'Norma', 'Peso']:
+                    df_mestre[col] = pd.to_numeric(
+                        df_mestre[col].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False),
+                        errors='coerce'
+                    ).fillna(0)
+                for col in ['Lastro', 'Camada']:
+                    df_mestre[col] = pd.to_numeric(df_mestre[col], errors='coerce').fillna(0)
                 df_mestre['Produto'] = pd.to_numeric(df_mestre['Produto'], errors='coerce')
-                df_mestre['Fator'] = pd.to_numeric(df_mestre['Fator'], errors='coerce')
-                # FILTRA: só guarda produtos com fator > 0 (60% dos registros tem fator=0)
-                df_mestre_valido = df_mestre.dropna(subset=['Produto', 'Fator'])
-                df_mestre_valido = df_mestre_valido[df_mestre_valido['Fator'] > 0]
+
+                # FILTRA: só guarda produtos com fator > 0 (63% dos registros tem fator=0)
+                df_valido = df_mestre.dropna(subset=['Produto'])
+                df_com_fator = df_valido[df_valido['Fator'] > 0]
+
                 self.fatores_mestre = dict(zip(
-                    df_mestre_valido['Produto'].astype(int),
-                    df_mestre_valido['Fator'].astype(float)
+                    df_com_fator['Produto'].astype(int),
+                    df_com_fator['Fator'].astype(float)
                 ))
+                # Norma (cxs por pallet) — útil para calcular pallets fechados
+                df_com_norma = df_valido[df_valido['Norma'] > 0]
+                self.normas_mestre = dict(zip(
+                    df_com_norma['Produto'].astype(int),
+                    df_com_norma['Norma'].astype(float)
+                ))
+                # Dados completos para consulta rápida
+                for _, row in df_com_fator.iterrows():
+                    cod = int(row['Produto'])
+                    self.dados_mestre[cod] = {
+                        'desc': str(row.get('Desc', '')).strip(),
+                        'fator': float(row['Fator']),
+                        'norma': float(row['Norma']),
+                        'lastro': int(row['Lastro']),
+                        'camada': int(row['Camada']),
+                        'peso': float(row['Peso']),
+                        'depto': str(row.get('Departamento', '')).strip(),
+                        'categoria': str(row.get('Categoria', '')).strip(),
+                    }
                 total_lidos = len(df_mestre)
                 total_validos = len(self.fatores_mestre)
-                print(f"[OK] dados.xlsx: {total_validos} produtos com fator válido (de {total_lidos} total)")
+                print(f"[OK] sp10a02.csv: {total_validos} produtos com fator válido (de {total_lidos} total)")
+                print(f"[OK] {len(self.normas_mestre)} produtos com Norma (cxs/pallet) carregada")
             except Exception as e:
-                print(f"[AVISO] Não foi possível ler o Fator do dados.xlsx: {e}")
+                print(f"[AVISO] Não foi possível ler sp10a02.csv: {e}")
 
         # Carrega a planilha de modelo de lojas zeradas
         self.lojas_zeradas_planilha = {}
@@ -168,13 +202,17 @@ class MotorInteligencia:
             return None, 0, "Item não encontrado ou sem lojas com Mix no estoque99"
 
         # --- FATOR DINÂMICO (PRIORIDADE MASTER) ---
-        # 1º Tenta do dados.xlsx (Mestre), 2º Tenta do db.csv (Histórico), 3º Fallback Seguro
+        # 1º Tenta do sp10a02.csv (Mestre), 2º Tenta do db.csv (Histórico), 3º Fallback Seguro
         fator_produto = self.fatores_mestre.get(codigo_int)
+        fator_fonte = 'SP10'
         if not fator_produto or fator_produto <= 0:
-            fator_produto = self.fatores_historicos.get(codigo_int, 12)
+            fator_produto = self.fatores_historicos.get(codigo_int, 0)
+            fator_fonte = 'DB.CSV'
             
-        if fator_produto <= 0:
+        if not fator_produto or fator_produto <= 0:
             fator_produto = 12
+            fator_fonte = 'FALLBACK'
+            print(f"  ⚠️ Item {codigo_int}: fator fallback (12). Verificar cadastro mestre.")
 
         # Proteção contra o bug do NaN e KeyError
         estoque_bruto = df_item_completo.iloc[0].get('Estoque Lojas', 0)
@@ -220,6 +258,13 @@ class MotorInteligencia:
             
             estoque_loja = float(loja.get('Estoque_Num', 0))
 
+            # --- P0-002: VALIDAÇÃO CRUZADA DO DDV ---
+            # Recalcula DDV internamente e prefere o calculado se divergir >30% do ERP
+            if mdv_final > 0:
+                ddv_calculado = estoque_loja / mdv_final
+                if ddv_val > 0 and abs(ddv_calculado - ddv_val) > (ddv_calculado * 0.3):
+                    ddv_val = round(ddv_calculado, 1)
+            
             lojas_processar.append({
                 'loja': lj,
                 'tem_mix': (str(loja.get('Mix Loja', '')).upper() == 'S'),
@@ -232,6 +277,18 @@ class MotorInteligencia:
             distribuicao[lj]['mdv'] = mdv_final
             distribuicao[lj]['ddv'] = ddv_val
             distribuicao[lj]['estoque'] = estoque_loja
+
+        # --- P0-001: CORREÇÃO MDV ANTI-RUPTURA (ciclo vicioso) ---
+        # Quando loja está zerada, o MDV cai artificialmente. Substituímos pela mediana
+        # das lojas que TÊM estoque para não subdistribuir.
+        lojas_com_estoque_e_venda = [l for l in lojas_processar if l['estoque'] > 0 and l['mdv'] > 0]
+        if lojas_com_estoque_e_venda:
+            mdvs_positivos = sorted([l['mdv'] for l in lojas_com_estoque_e_venda])
+            mediana_mdv = mdvs_positivos[len(mdvs_positivos) // 2]
+            for info in lojas_processar:
+                if info['estoque'] <= 0 and info['mdv'] < (mediana_mdv * 0.5):
+                    info['mdv'] = mediana_mdv
+                    distribuicao[info['loja']]['mdv'] = mediana_mdv
 
         # ==========================================
         # 0. PRÉ-CÁLCULO DE NECESSIDADE GLOBAL (TRAVA DE SALDO / STOCK CONFIDENCE)

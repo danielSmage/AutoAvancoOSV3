@@ -10,7 +10,7 @@ import json
 from modulos.seguranca import AutenticadorFirebase
 from modulos.ai_core import MotorInteligencia
 from modulos.rpa_bot import RoboOperador
-from modulos.bot_telnet import BotTelnet
+# bot_telnet REMOVIDO — módulo depreciado (fracasso). Apenas RPA visual.
 
 # Configurações globais de aparência
 ctk.set_appearance_mode("dark")
@@ -69,7 +69,7 @@ class JanelaConfiguracoes(ctk.CTkToplevel):
         self.entry_porta.insert(0, cfg.get("porta", "23"))
 
         ctk.CTkLabel(frame, text="Tipo de Conexão:", anchor="w").grid(row=4, column=0, padx=10, pady=(0, 2), sticky="w")
-        self.opt_conexao = ctk.CTkOptionMenu(frame, values=["pyautogui", "telnet"])
+        self.opt_conexao = ctk.CTkOptionMenu(frame, values=["pyautogui"])
         self.opt_conexao.grid(row=5, column=0, padx=10, pady=(0, 15), sticky="ew")
         self.opt_conexao.set(cfg.get("conexao", "pyautogui"))
 
@@ -387,12 +387,7 @@ class AppReposicao(ctk.CTk):
 
         try:
             self.motor = MotorInteligencia(path_db, path_estoque)
-            
-            if modo_conexao == "telnet":
-                self.robo = BotTelnet(self.operador_logado, host=host, port=porta, log_callback=self._log)
-            else:
-                self.robo = RoboOperador(self.operador_logado, log_callback=self._log)
-                
+            self.robo = RoboOperador(self.operador_logado, log_callback=self._log)
         except Exception as e:
             messagebox.showerror("Erro Fatal", f"Erro ao inicializar sistemas:\n{str(e)}")
             sys.exit()
@@ -459,6 +454,12 @@ class AppReposicao(ctk.CTk):
                 self._log(f"\n{'='*40}")
                 self._log(f"[{i+1}/{len(codigos)}] Item {cod}")
 
+                # Mostra dados do cadastro mestre (sp10a02) se disponível
+                info_mestre = self.motor.dados_mestre.get(int(cod), {})
+                if info_mestre:
+                    self._log(f"   📋 {info_mestre.get('desc', '?')} | Fator: {info_mestre.get('fator', '?')} | Norma: {info_mestre.get('norma', '?')} cx/pallet")
+                    self._log(f"   📦 Depto: {info_mestre.get('depto', '?')} | Categoria: {info_mestre.get('categoria', '?')}")
+
                 resultado_ia = self.motor.calcular_distribuicao(
                     cod, modo=modo,
                     dias_grande=dias_grande,
@@ -470,6 +471,8 @@ class AppReposicao(ctk.CTk):
                 else:
                     distribuicao, cd_total, status = resultado_ia
                     fator_real = 24
+
+                self._log(f"   🏭 Estoque CD: {cd_total} cx | Status: {status}")
 
                 # Sempre chama o robô para ele digitar o código na tela. 
                 # Se não houver distribuição (ex: estoque negativo), ele fará a tratativa de ESC e N.
